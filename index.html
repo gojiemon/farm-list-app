@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>月別・農家リスト</title>
+  <title>月別・農家リスト（編集機能付き）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; margin: 18px; }
@@ -12,7 +12,7 @@
     input[type="checkbox"] { transform: scale(1.2); }
     textarea { width: 100%; min-height: 60px; }
     .card { border: 1px solid #e5e5e5; border-radius: 8px; padding: 10px; margin: 10px 0; background: #fff; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; overflow-x: auto; display: block; }
     th, td { border: 1px solid #ddd; padding: 8px; word-break: break-word; }
     th { background: #f7f7f7; }
     .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -20,7 +20,21 @@
     .danger { color: #b00020; }
     .nowrap { white-space: nowrap; }
     .num { text-align: right; }
+
+    /* モーダル */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.4);
+      display: none; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal {
+      background: #fff; width: min(680px, 92vw); border-radius: 10px; padding: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.2);
+    }
+    .modal header { font-weight: 700; margin-bottom: 6px; }
+    .modal .footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
   </style>
+  <!-- IndexedDB ライブラリ -->
+  <script src="https://unpkg.com/idb-keyval@6/dist/idb-keyval.iife.js"></script>
 </head>
 <body>
   <h1>🍇 月別・農家リスト</h1>
@@ -31,12 +45,7 @@
       <input id="year" type="number" placeholder="年（例：2025）" style="width:120px" />
       <select id="month" style="width:120px">
         <option value="" disabled selected>月を選択</option>
-        <script>
-          // 月の選択肢を生成（1〜12）
-          for (let m=1; m<=12; m++) {
-            document.write(`<option value="${m}">${m}月</option>`);
-          }
-        </script>
+        <script>for(let m=1;m<=12;m++)document.write(`<option value="${m}">${m}月</option>`);</script>
       </select>
       <input id="fruit" placeholder="果物名（例：シャインマスカット）" style="flex:1 1 220px" />
     </div>
@@ -54,26 +63,24 @@
     <div class="row">
       <button onclick="addItem()">登録</button>
       <button onclick="clearForm()">クリア</button>
-      <span class="muted">※データはこの端末のブラウザに保存（APIなし／オフラインOK）</span>
+      <span class="muted">※IndexedDBに保存（APIなし／オフラインOK）</span>
     </div>
   </div>
 
-  <!-- フィルタ & 書き出し -->
+  <!-- フィルタ & 書き出し/バックアップ -->
   <div class="card">
     <div class="controls">
       <input id="filterYear" type="number" placeholder="年で絞る（例：2025）" oninput="render()" style="width:140px" />
       <select id="filterMonth" onchange="render()" style="width:120px">
         <option value="">月（すべて）</option>
-        <script>
-          for (let m=1; m<=12; m++) {
-            document.write(`<option value="${m}">${m}月</option>`);
-          }
-        </script>
+        <script>for(let m=1;m<=12;m++)document.write(`<option value="${m}">${m}月</option>`);</script>
       </select>
       <input id="keyword" placeholder="検索（果物／農園／連絡先／メモ）" oninput="render()" style="flex:1 1 240px" />
       <label class="nowrap"><input id="onlyOrdered" type="checkbox" onchange="render()" /> 発注済みのみ</label>
       <button onclick="downloadCSV(false)">CSV出力（表示中）</button>
       <button onclick="downloadCSV(true)">CSV出力（全件）</button>
+      <button onclick="exportJSON()">JSONエクスポート</button>
+      <label class="nowrap"><input type="file" id="importFile" accept="application/json" onchange="importJSON(event)" /> JSONインポート</label>
       <button class="danger" onclick="confirmClear()">全削除</button>
     </div>
   </div>
@@ -89,38 +96,59 @@
         <th>連絡先（電話 / メール）</th>
         <th>発注</th>
         <th>メモ</th>
-        <th>削除</th>
+        <th>操作</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
   </table>
 
+  <!-- 編集モーダル -->
+  <div id="editBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <header>行を編集</header>
+      <div class="row">
+        <input id="edit_year" type="number" placeholder="年" style="width:120px" />
+        <select id="edit_month" style="width:120px">
+          <script>for(let m=1;m<=12;m++)document.write(`<option value="${m}">${m}月</option>`);</script>
+        </select>
+        <input id="edit_fruit" placeholder="果物名" style="flex:1 1 220px" />
+      </div>
+      <div class="row">
+        <input id="edit_farmName" placeholder="農園名（屋号）" style="flex:1 1 220px" />
+        <input id="edit_phone" placeholder="電話" style="flex:1 1 160px" />
+        <input id="edit_email" placeholder="メール" style="flex:1 1 200px" />
+      </div>
+      <div class="row">
+        <label><input id="edit_ordered" type="checkbox" /> 発注済み</label>
+      </div>
+      <div class="row">
+        <textarea id="edit_note" placeholder="メモ"></textarea>
+      </div>
+      <div class="footer">
+        <button onclick="closeEdit()">キャンセル</button>
+        <button onclick="saveEdit()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    // --- データの入出力（localStorageに保存） ---
-    const STORAGE_KEY = "monthly-farmers-v1";
-    /** @type {Array<{
-      id:string, year:number|null, month:number|null, fruit:string,
-      farmName:string, phone:string, email:string, ordered:boolean, note:string,
-      createdAt:string
-    }>} */
-    let items = load();
+    // ====== 保存層：IndexedDB（idb-keyval） ======
+    const store = new idbKeyval.Store('monthly-farmers-db', 'items-store');
+    async function loadItems(){ try{return (await idbKeyval.get('items', store))||[]}catch{return[]} }
+    async function saveItems(){ await idbKeyval.set('items', items, store) }
 
-    function load() {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
-      catch { return []; }
-    }
-    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+    // ====== アプリ状態 ======
+    /** @type {Array<{id:string,year:number|null,month:number|null,fruit:string,farmName:string,phone:string,email:string,ordered:boolean,note:string,createdAt:string}>} */
+    let items = [];
+    let editingId = null; // 編集対象のid
 
-    // --- ユーティリティ ---
-    const $ = (id) => document.getElementById(id);
+    // ====== ユーティリティ ======
+    const $ = id => document.getElementById(id);
     const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const escapeCsv = (s) => {
-      const v = (s ?? "").toString().replace(/"/g, '""');
-      return /[",\n]/.test(v) ? `"${v}"` : v;
-    };
+    const escapeCsv = s => { const v=(s??"").toString().replace(/"/g,'""'); return /[",\n]/.test(v)?`"${v}"`:v; };
 
-    // --- 追加 & 表示 ---
-    function addItem() {
+    // ====== 追加 ======
+    async function addItem(){
       const yearVal = $("year").value.trim();
       const monthVal = $("month").value;
       const year = yearVal ? Number(yearVal) : null;
@@ -137,132 +165,178 @@
       if (!year) { alert("年を入力してください"); return; }
       if (!month) { alert("月を選択してください"); return; }
 
-      items.push({
-        id: uid(),
-        year, month, fruit, farmName, phone, email, ordered, note,
-        createdAt: new Date().toISOString()
-      });
-      save();
-      clearForm();
-      render();
+      items.push({ id: uid(), year, month, fruit, farmName, phone, email, ordered, note, createdAt: new Date().toISOString() });
+      await saveItems();
+      clearForm(); render();
     }
 
-    function clearForm() {
-      // 年・月は残す（連続入力が楽）
-      $("fruit").value = "";
-      $("farmName").value = "";
-      $("contactPhone").value = "";
-      $("contactEmail").value = "";
-      $("ordered").checked = false;
-      $("note").value = "";
+    function clearForm(){
+      $("fruit").value = ""; $("farmName").value = "";
+      $("contactPhone").value = ""; $("contactEmail").value = "";
+      $("ordered").checked = false; $("note").value = "";
+      // 年・月は連続入力のため残す
     }
 
-    function confirmClear() {
+    async function confirmClear(){
       if (!items.length) return;
-      if (confirm("保存データをすべて削除します。よろしいですか？")) {
-        items = [];
-        save();
-        render();
+      if (confirm("保存データをすべて削除します。よろしいですか？")){
+        items = []; await saveItems(); render();
       }
     }
 
-    function render() {
+    async function toggleOrdered(id, checked){
+      const i = items.findIndex(x => x.id === id);
+      if (i >= 0){ items[i].ordered = checked; await saveItems(); }
+    }
+
+    async function removeItem(id){
+      if (!confirm("この行を削除しますか？")) return;
+      items = items.filter(x => x.id !== id);
+      await saveItems(); render();
+    }
+
+    // ====== 編集（モーダル） ======
+    function openEdit(id){
+      const row = items.find(x => x.id === id);
+      if (!row) return;
+      editingId = id;
+      $("edit_year").value = row.year ?? "";
+      $("edit_month").value = row.month ?? "";
+      $("edit_fruit").value = row.fruit || "";
+      $("edit_farmName").value = row.farmName || "";
+      $("edit_phone").value = row.phone || "";
+      $("edit_email").value = row.email || "";
+      $("edit_ordered").checked = !!row.ordered;
+      $("edit_note").value = row.note || "";
+      $("editBackdrop").style.display = "flex";
+    }
+
+    function closeEdit(){
+      editingId = null;
+      $("editBackdrop").style.display = "none";
+    }
+
+    async function saveEdit(){
+      if (!editingId) return;
+      const yearVal = $("edit_year").value.trim();
+      const monthVal = $("edit_month").value;
+      const fruit = $("edit_fruit").value.trim();
+      const farmName = $("edit_farmName").value.trim();
+
+      if (!fruit){ alert("果物名は必須です"); return; }
+      if (!farmName){ alert("農園名は必須です"); return; }
+      if (!yearVal){ alert("年を入力してください"); return; }
+      if (!monthVal){ alert("月を選択してください"); return; }
+
+      const i = items.findIndex(x => x.id === editingId);
+      if (i >= 0){
+        items[i] = {
+          ...items[i],
+          year: Number(yearVal),
+          month: Number(monthVal),
+          fruit: $("edit_fruit").value.trim(),
+          farmName: $("edit_farmName").value.trim(),
+          phone: $("edit_phone").value.trim(),
+          email: $("edit_email").value.trim(),
+          ordered: $("edit_ordered").checked,
+          note: $("edit_note").value.trim(),
+        };
+        await saveItems();
+      }
+      closeEdit(); render();
+    }
+
+    // ====== 表示 ======
+    function render(){
       const yearStr = $("filterYear").value.trim();
       const monthStr = $("filterMonth").value;
       const kw = $("keyword").value.trim().toLowerCase();
       const onlyOrdered = $("onlyOrdered").checked;
 
-      let view = items.slice().sort((a,b) => {
-        // 年↓ → 月↑ → 果物名 の順で並べる
-        const ay = a.year ?? -Infinity, by = b.year ?? -Infinity;
-        if (ay !== by) return by - ay;
-        const am = a.month ?? 0, bm = b.month ?? 0;
-        if (am !== bm) return am - bm;
-        return a.fruit.localeCompare(b.fruit, "ja");
+      let view = items.slice().sort((a,b)=>{
+        const ay=a.year??-Infinity, by=b.year??-Infinity; if(ay!==by) return by-ay;
+        const am=a.month??0, bm=b.month??0; if(am!==bm) return am-bm;
+        return a.fruit.localeCompare(b.fruit,"ja");
       });
 
       if (yearStr) view = view.filter(v => (v.year ?? "") === Number(yearStr));
       if (monthStr) view = view.filter(v => (v.month ?? "") === Number(monthStr));
       if (onlyOrdered) view = view.filter(v => v.ordered);
-      if (kw) {
-        view = view.filter(v => [
-          v.fruit, v.farmName, v.phone, v.email, v.note
-        ].some(x => (x || "").toLowerCase().includes(kw)));
+      if (kw){
+        view = view.filter(v => [v.fruit,v.farmName,v.phone,v.email,v.note]
+          .some(x => (x||"").toLowerCase().includes(kw)));
       }
 
-      const tbody = $("tbody");
-      tbody.innerHTML = "";
-      view.forEach((v) => {
-        const tr = document.createElement("tr");
+      const tbody = $("tbody"); tbody.innerHTML = "";
+      view.forEach(v=>{
+        const tr=document.createElement("tr");
         tr.innerHTML = `
           <td class="num">${v.year ?? ""}</td>
           <td class="num">${v.month ?? ""}</td>
           <td>${v.fruit}</td>
           <td>${v.farmName}</td>
           <td>${v.phone || ""}${v.phone && v.email ? " / " : ""}${v.email || ""}</td>
-          <td class="nowrap">
-            <input type="checkbox" ${v.ordered ? "checked" : ""} onclick="toggleOrdered('${v.id}', this.checked)" />
-          </td>
+          <td class="nowrap"><input type="checkbox" ${v.ordered?"checked":""} onclick="toggleOrdered('${v.id}', this.checked)" /></td>
           <td>${v.note || ""}</td>
-          <td><button onclick="removeItem('${v.id}')">削除</button></td>
+          <td class="nowrap">
+            <button onclick="openEdit('${v.id}')">編集</button>
+            <button onclick="removeItem('${v.id}')">削除</button>
+          </td>
         `;
         tbody.appendChild(tr);
       });
     }
 
-    function toggleOrdered(id, checked) {
-      const i = items.findIndex(x => x.id === id);
-      if (i >= 0) {
-        items[i].ordered = checked;
-        save();
+    // ====== CSV出力 ======
+    function downloadCSV(all=false){
+      const yearStr=$("filterYear").value.trim();
+      const monthStr=$("filterMonth").value;
+      const kw=$("keyword").value.trim().toLowerCase();
+      const onlyOrdered=$("onlyOrdered").checked;
+
+      let data=items.slice();
+      if(!all){
+        if(yearStr) data=data.filter(v=>(v.year??"")===Number(yearStr));
+        if(monthStr) data=data.filter(v=>(v.month??"")===Number(monthStr));
+        if(onlyOrdered) data=data.filter(v=>v.ordered);
+        if(kw) data=data.filter(v=>[v.fruit,v.farmName,v.phone,v.email,v.note]
+          .some(x=>(x||"").toLowerCase().includes(kw)));
       }
-    }
+      if(!data.length){ alert("出力するデータがありません"); return; }
 
-    function removeItem(id) {
-      if (!confirm("この行を削除しますか？")) return;
-      items = items.filter(x => x.id !== id);
-      save();
-      render();
-    }
-
-    // --- CSV出力 ---
-    function downloadCSV(all = false) {
-      const yearStr = $("filterYear").value.trim();
-      const monthStr = $("filterMonth").value;
-      const kw = $("keyword").value.trim().toLowerCase();
-      const onlyOrdered = $("onlyOrdered").checked;
-
-      let data = items.slice();
-      if (!all) {
-        if (yearStr) data = data.filter(v => (v.year ?? "") === Number(yearStr));
-        if (monthStr) data = data.filter(v => (v.month ?? "") === Number(monthStr));
-        if (onlyOrdered) data = data.filter(v => v.ordered);
-        if (kw) data = data.filter(v => [
-          v.fruit, v.farmName, v.phone, v.email, v.note
-        ].some(x => (x || "").toLowerCase().includes(kw)));
-      }
-
-      if (!data.length) { alert("出力するデータがありません"); return; }
-
-      const header = ["年","月","果物名","農園名","電話","メール","発注済み","メモ","登録日時ISO"];
-      const rows = data.map(v => [
-        v.year ?? "", v.month ?? "", v.fruit, v.farmName, v.phone || "", v.email || "",
-        v.ordered ? "TRUE" : "FALSE", v.note || "", v.createdAt
+      const header=["年","月","果物名","農園名","電話","メール","発注済み","メモ","登録日時ISO"];
+      const rows=data.map(v=>[
+        v.year??"", v.month??"", v.fruit, v.farmName, v.phone||"", v.email||"",
+        v.ordered?"TRUE":"FALSE", v.note||"", v.createdAt
       ].map(escapeCsv).join(","));
-
-      const csv = [header.join(","), ...rows].join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = Object.assign(document.createElement("a"), {
-        href: url,
-        download: `monthly-farmers${all ? "-all" : ""}.csv`
-      });
-      a.click();
-      URL.revokeObjectURL(url);
+      const csv=[header.join(","), ...rows].join("\n");
+      const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"}); const url=URL.createObjectURL(blob);
+      const a=Object.assign(document.createElement("a"),{href:url,download:`monthly-farmers${all?"-all":""}.csv`});
+      a.click(); URL.revokeObjectURL(url);
     }
 
-    // 初期描画
-    render();
+    // ====== JSONバックアップ ======
+    function exportJSON(){
+      const data=JSON.stringify({version:1,items},null,2);
+      const blob=new Blob([data],{type:"application/json"}); const url=URL.createObjectURL(blob);
+      const a=Object.assign(document.createElement("a"),{href:url,download:`monthly-farmers-backup-${new Date().toISOString().slice(0,10)}.json`});
+      a.click(); URL.revokeObjectURL(url);
+    }
+
+    async function importJSON(ev){
+      const file=ev.target.files?.[0]; if(!file) return;
+      const text=await file.text();
+      try{
+        const obj=JSON.parse(text);
+        if(!obj.items||!Array.isArray(obj.items)) throw new Error("不正な形式");
+        if(!confirm("このバックアップで上書きします。よろしいですか？")) return;
+        items=obj.items; await saveItems(); render(); alert("インポートしました");
+      }catch(e){ alert("読み込みに失敗しました："+e.message); }
+      finally{ ev.target.value=""; }
+    }
+
+    // ====== 初期化 ======
+    (async()=>{ items=await loadItems(); render(); })();
   </script>
 </body>
 </html>
