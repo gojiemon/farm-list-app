@@ -1,115 +1,268 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>農家リスト管理アプリ</title>
+  <meta charset="UTF-8" />
+  <title>月別・農家リスト</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: sans-serif; margin: 20px; }
-    input, textarea, button { margin: 5px; padding: 6px; }
-    table { border-collapse: collapse; margin-top: 15px; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    th { background: #f3f3f3; }
-    .section { margin-bottom: 20px; }
+    body { font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; margin: 18px; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+    input, select, textarea, button { padding: 8px; font-size: 14px; }
+    input[type="checkbox"] { transform: scale(1.2); }
+    textarea { width: 100%; min-height: 60px; }
+    .card { border: 1px solid #e5e5e5; border-radius: 8px; padding: 10px; margin: 10px 0; background: #fff; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; word-break: break-word; }
+    th { background: #f7f7f7; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .muted { color: #666; font-size: 12px; }
+    .danger { color: #b00020; }
+    .nowrap { white-space: nowrap; }
+    .num { text-align: right; }
   </style>
 </head>
 <body>
-  <h1>🌱 農家リスト管理</h1>
+  <h1>🍇 月別・農家リスト</h1>
 
-  <div class="section">
-    <h3>新しい農家を登録</h3>
-    <input id="name" placeholder="屋号または氏名">
-    <input id="pref" placeholder="都道府県">
-    <input id="city" placeholder="市区町村">
-    <input id="fruit" placeholder="主な果物">
-    <textarea id="memo" placeholder="メモ（味の特徴など）"></textarea><br>
-    <button onclick="addFarmer()">登録</button>
-    <button onclick="downloadCSV()">CSVで出力</button>
+  <!-- 入力フォーム -->
+  <div class="card">
+    <div class="row">
+      <input id="year" type="number" placeholder="年（例：2025）" style="width:120px" />
+      <select id="month" style="width:120px">
+        <option value="" disabled selected>月を選択</option>
+        <script>
+          // 月の選択肢を生成（1〜12）
+          for (let m=1; m<=12; m++) {
+            document.write(`<option value="${m}">${m}月</option>`);
+          }
+        </script>
+      </select>
+      <input id="fruit" placeholder="果物名（例：シャインマスカット）" style="flex:1 1 220px" />
+    </div>
+    <div class="row">
+      <input id="farmName" placeholder="農園名（屋号）" style="flex:1 1 220px" />
+      <input id="contactPhone" placeholder="電話" style="flex:1 1 160px" />
+      <input id="contactEmail" placeholder="メール" style="flex:1 1 200px" />
+    </div>
+    <div class="row">
+      <label><input id="ordered" type="checkbox" /> 発注済みにする</label>
+    </div>
+    <div class="row">
+      <textarea id="note" placeholder="メモ（味・糖度・保存のコツ・注意点など）"></textarea>
+    </div>
+    <div class="row">
+      <button onclick="addItem()">登録</button>
+      <button onclick="clearForm()">クリア</button>
+      <span class="muted">※データはこの端末のブラウザに保存（APIなし／オフラインOK）</span>
+    </div>
   </div>
 
-  <h3>登録済みリスト</h3>
-  <table id="farmerTable">
+  <!-- フィルタ & 書き出し -->
+  <div class="card">
+    <div class="controls">
+      <input id="filterYear" type="number" placeholder="年で絞る（例：2025）" oninput="render()" style="width:140px" />
+      <select id="filterMonth" onchange="render()" style="width:120px">
+        <option value="">月（すべて）</option>
+        <script>
+          for (let m=1; m<=12; m++) {
+            document.write(`<option value="${m}">${m}月</option>`);
+          }
+        </script>
+      </select>
+      <input id="keyword" placeholder="検索（果物／農園／連絡先／メモ）" oninput="render()" style="flex:1 1 240px" />
+      <label class="nowrap"><input id="onlyOrdered" type="checkbox" onchange="render()" /> 発注済みのみ</label>
+      <button onclick="downloadCSV(false)">CSV出力（表示中）</button>
+      <button onclick="downloadCSV(true)">CSV出力（全件）</button>
+      <button class="danger" onclick="confirmClear()">全削除</button>
+    </div>
+  </div>
+
+  <!-- 一覧 -->
+  <table>
     <thead>
       <tr>
-        <th>屋号/氏名</th><th>都道府県</th><th>市区町村</th>
-        <th>主な果物</th><th>メモ</th><th>削除</th>
+        <th class="num">年</th>
+        <th class="num">月</th>
+        <th>果物名</th>
+        <th>農園名</th>
+        <th>連絡先（電話 / メール）</th>
+        <th>発注</th>
+        <th>メモ</th>
+        <th>削除</th>
       </tr>
     </thead>
-    <tbody></tbody>
+    <tbody id="tbody"></tbody>
   </table>
 
   <script>
-    // ブラウザ内にデータ保存
-    let farmers = JSON.parse(localStorage.getItem('farmers') || '[]');
-    const tableBody = document.querySelector('#farmerTable tbody');
+    // --- データの入出力（localStorageに保存） ---
+    const STORAGE_KEY = "monthly-farmers-v1";
+    /** @type {Array<{
+      id:string, year:number|null, month:number|null, fruit:string,
+      farmName:string, phone:string, email:string, ordered:boolean, note:string,
+      createdAt:string
+    }>} */
+    let items = load();
 
-    // 表を再描画
-    function renderTable() {
-      tableBody.innerHTML = '';
-      farmers.forEach((f, i) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${f.name}</td>
-          <td>${f.pref}</td>
-          <td>${f.city}</td>
-          <td>${f.fruit}</td>
-          <td>${f.memo}</td>
-          <td><button onclick="deleteFarmer(${i})">削除</button></td>
-        `;
-        tableBody.appendChild(tr);
+    function load() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
+      catch { return []; }
+    }
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+
+    // --- ユーティリティ ---
+    const $ = (id) => document.getElementById(id);
+    const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const escapeCsv = (s) => {
+      const v = (s ?? "").toString().replace(/"/g, '""');
+      return /[",\n]/.test(v) ? `"${v}"` : v;
+    };
+
+    // --- 追加 & 表示 ---
+    function addItem() {
+      const yearVal = $("year").value.trim();
+      const monthVal = $("month").value;
+      const year = yearVal ? Number(yearVal) : null;
+      const month = monthVal ? Number(monthVal) : null;
+      const fruit = $("fruit").value.trim();
+      const farmName = $("farmName").value.trim();
+      const phone = $("contactPhone").value.trim();
+      const email = $("contactEmail").value.trim();
+      const ordered = $("ordered").checked;
+      const note = $("note").value.trim();
+
+      if (!fruit) { alert("果物名は必須です"); return; }
+      if (!farmName) { alert("農園名は必須です"); return; }
+      if (!year) { alert("年を入力してください"); return; }
+      if (!month) { alert("月を選択してください"); return; }
+
+      items.push({
+        id: uid(),
+        year, month, fruit, farmName, phone, email, ordered, note,
+        createdAt: new Date().toISOString()
       });
-      localStorage.setItem('farmers', JSON.stringify(farmers));
+      save();
+      clearForm();
+      render();
     }
 
-    // 追加ボタン押したとき
-    function addFarmer() {
-      const name = document.getElementById('name').value.trim();
-      const pref = document.getElementById('pref').value.trim();
-      const city = document.getElementById('city').value.trim();
-      const fruit = document.getElementById('fruit').value.trim();
-      const memo = document.getElementById('memo').value.trim();
-
-      if (!name) { alert('名前は必須です'); return; }
-
-      farmers.push({ name, pref, city, fruit, memo });
-      renderTable();
-
-      // 入力欄を空にする
-      document.getElementById('name').value = '';
-      document.getElementById('pref').value = '';
-      document.getElementById('city').value = '';
-      document.getElementById('fruit').value = '';
-      document.getElementById('memo').value = '';
+    function clearForm() {
+      // 年・月は残す（連続入力が楽）
+      $("fruit").value = "";
+      $("farmName").value = "";
+      $("contactPhone").value = "";
+      $("contactEmail").value = "";
+      $("ordered").checked = false;
+      $("note").value = "";
     }
 
-    // 削除ボタン
-    function deleteFarmer(i) {
-      if (confirm('削除しますか？')) {
-        farmers.splice(i, 1);
-        renderTable();
+    function confirmClear() {
+      if (!items.length) return;
+      if (confirm("保存データをすべて削除します。よろしいですか？")) {
+        items = [];
+        save();
+        render();
       }
     }
 
-    // CSV出力
-    function downloadCSV() {
-      if (farmers.length === 0) {
-        alert('まだデータがありません');
-        return;
+    function render() {
+      const yearStr = $("filterYear").value.trim();
+      const monthStr = $("filterMonth").value;
+      const kw = $("keyword").value.trim().toLowerCase();
+      const onlyOrdered = $("onlyOrdered").checked;
+
+      let view = items.slice().sort((a,b) => {
+        // 年↓ → 月↑ → 果物名 の順で並べる
+        const ay = a.year ?? -Infinity, by = b.year ?? -Infinity;
+        if (ay !== by) return by - ay;
+        const am = a.month ?? 0, bm = b.month ?? 0;
+        if (am !== bm) return am - bm;
+        return a.fruit.localeCompare(b.fruit, "ja");
+      });
+
+      if (yearStr) view = view.filter(v => (v.year ?? "") === Number(yearStr));
+      if (monthStr) view = view.filter(v => (v.month ?? "") === Number(monthStr));
+      if (onlyOrdered) view = view.filter(v => v.ordered);
+      if (kw) {
+        view = view.filter(v => [
+          v.fruit, v.farmName, v.phone, v.email, v.note
+        ].some(x => (x || "").toLowerCase().includes(kw)));
       }
-      const header = ['屋号/氏名','都道府県','市区町村','主な果物','メモ'];
-      const rows = farmers.map(f =>
-        [f.name, f.pref, f.city, f.fruit, f.memo].map(s => `"${(s || '').replace(/"/g, '""')}"`).join(',')
-      );
-      const csv = [header.join(','), ...rows].join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+
+      const tbody = $("tbody");
+      tbody.innerHTML = "";
+      view.forEach((v) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="num">${v.year ?? ""}</td>
+          <td class="num">${v.month ?? ""}</td>
+          <td>${v.fruit}</td>
+          <td>${v.farmName}</td>
+          <td>${v.phone || ""}${v.phone && v.email ? " / " : ""}${v.email || ""}</td>
+          <td class="nowrap">
+            <input type="checkbox" ${v.ordered ? "checked" : ""} onclick="toggleOrdered('${v.id}', this.checked)" />
+          </td>
+          <td>${v.note || ""}</td>
+          <td><button onclick="removeItem('${v.id}')">削除</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function toggleOrdered(id, checked) {
+      const i = items.findIndex(x => x.id === id);
+      if (i >= 0) {
+        items[i].ordered = checked;
+        save();
+      }
+    }
+
+    function removeItem(id) {
+      if (!confirm("この行を削除しますか？")) return;
+      items = items.filter(x => x.id !== id);
+      save();
+      render();
+    }
+
+    // --- CSV出力 ---
+    function downloadCSV(all = false) {
+      const yearStr = $("filterYear").value.trim();
+      const monthStr = $("filterMonth").value;
+      const kw = $("keyword").value.trim().toLowerCase();
+      const onlyOrdered = $("onlyOrdered").checked;
+
+      let data = items.slice();
+      if (!all) {
+        if (yearStr) data = data.filter(v => (v.year ?? "") === Number(yearStr));
+        if (monthStr) data = data.filter(v => (v.month ?? "") === Number(monthStr));
+        if (onlyOrdered) data = data.filter(v => v.ordered);
+        if (kw) data = data.filter(v => [
+          v.fruit, v.farmName, v.phone, v.email, v.note
+        ].some(x => (x || "").toLowerCase().includes(kw)));
+      }
+
+      if (!data.length) { alert("出力するデータがありません"); return; }
+
+      const header = ["年","月","果物名","農園名","電話","メール","発注済み","メモ","登録日時ISO"];
+      const rows = data.map(v => [
+        v.year ?? "", v.month ?? "", v.fruit, v.farmName, v.phone || "", v.email || "",
+        v.ordered ? "TRUE" : "FALSE", v.note || "", v.createdAt
+      ].map(escapeCsv).join(","));
+
+      const csv = [header.join(","), ...rows].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'farmers.csv';
+      const a = Object.assign(document.createElement("a"), {
+        href: url,
+        download: `monthly-farmers${all ? "-all" : ""}.csv`
+      });
       a.click();
       URL.revokeObjectURL(url);
     }
 
-    renderTable(); // 初期表示
+    // 初期描画
+    render();
   </script>
 </body>
 </html>
