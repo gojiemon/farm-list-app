@@ -152,7 +152,7 @@
       async init(){
         try{ db = await idbOpen(); useIDB = true; }
         catch{ useIDB = false; }
-        $('storage').textContent = '保存: ' + (useIDB ? 'IndexedDB' : 'localStorage');
+        $el('storage').textContent = '保存: ' + (useIDB ? 'IndexedDB' : 'localStorage');
       },
       async load(){
         if(useIDB){ try{ return (await idbGet('items')) || []; }catch{ return []; } }
@@ -169,8 +169,8 @@
       let supported = !!(navigator.storage && navigator.storage.persist);
       let persisted = false;
       try{ persisted = supported ? await navigator.storage.persist() : false; }catch{}
-      $('persist').textContent = '永続化: ' + (persisted ? '確保' : (supported ? '未確保' : '非対応'));
-      if(!persisted) $('warn').style.display = 'block';
+      $el('persist').textContent = '永続化: ' + (persisted ? '確保' : (supported ? '未確保' : '非対応'));
+      if(!persisted) $el('warn').style.display = 'block';
     }
 
     // ===== State & utils =====
@@ -209,6 +209,8 @@
     async function saveEdit(){ const id=state.editingId; if(!id) return; const i=state.items.findIndex(x=>x.id===id); if(i<0) return; const upd={ ...state.items[i], year:$el('e_year').value.trim(), month:Number($el('e_month').value), fruit:$el('e_fruit').value.trim(), farm:$el('e_farm').value.trim(), phone:$el('e_phone').value.trim(), ordered:$el('e_ordered').checked, note:$el('e_note').value.trim() }; const m=validate(upd); if(m){ alert(m); return; } state.items[i]=upd; await store.save(state.items); render(); closeEdit(); toast('更新しました') }
 
     function closeEdit(){ state.editingId=null; $el('editBackdrop').style.display='none' }
+
+    async function toggleOrdered(id, ordered){ const idx=state.items.findIndex(x=>x.id===id); if(idx<0) return; state.items[idx]={ ...state.items[idx], ordered }; await store.save(state.items); render(); }
 
     async function wipeAll(){ if(!state.items.length) return; if(confirm('全て削除しますか？')){ state.items=[]; await store.save(state.items); render(); toast('全削除しました') } }
 
