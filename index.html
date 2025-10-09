@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>月別・農家リスト（永続保存対応）</title>
+  <title>月別・農家リスト（安定版・永続保存・互換修正）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#fff; --fg:#111827; --muted:#6b7280; --line:#e5e7eb; --card:#fff; }
@@ -40,6 +40,7 @@
 
   <div id="warn" class="card warning" style="display:none">この端末では保存が消える可能性があります（プライベートモードや保存ブロック等）。必要に応じて JSON バックアップをご利用ください。</div>
 
+  <!-- Filters -->
   <div class="card" aria-label="フィルター">
     <div class="row">
       <input id="q" placeholder="果物名・農園名・メモ・電話で検索" style="flex:1 1 260px" />
@@ -48,6 +49,7 @@
     </div>
   </div>
 
+  <!-- Form -->
   <div class="card" aria-label="登録フォーム">
     <div class="row">
       <input id="year" type="number" placeholder="年 (例:2025)" style="width:120px" />
@@ -69,10 +71,11 @@
       <button id="wipe">全削除</button>
       <span style="margin-left:auto"></span>
       <button id="exp">JSONエクスポート</button>
-      <label><input type="file" id="imp" accept="application/json" style="display:none"/><button id="impBtn">JSONインポート</button></label>
+      <label><input type="file" id="imp" accept="application/json" style="display:none"/><button id="impBtn" type="button">JSONインポート</button></label>
     </div>
   </div>
 
+  <!-- List -->
   <div class="tablewrap" aria-label="一覧">
     <table>
       <thead><tr>
@@ -90,6 +93,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <!-- Edit Modal -->
   <div id="editBackdrop" class="backdrop" role="dialog" aria-modal="true">
     <div class="modal">
       <header>行を編集</header>
@@ -107,8 +111,8 @@
       </div>
       <div class="row"><textarea id="e_note" placeholder="メモ"></textarea></div>
       <div class="footer">
-        <button id="cancelEdit">キャンセル</button>
-        <button id="saveEdit">保存</button>
+        <button id="cancelEdit" type="button">キャンセル</button>
+        <button id="saveEdit" type="button">保存</button>
       </div>
     </div>
   </div>
@@ -117,48 +121,48 @@
     // ===== Storage layer: IndexedDB → fallback localStorage =====
     const DB_NAME = 'mf-db-v1';
     const STORE = 'kv';
-    let useIDB = false;
-    let db = null;
+    var useIDB = false;
+    var db = null;
 
     function idbOpen(){
-      return new Promise((resolve, reject)=>{
-        const req = indexedDB.open(DB_NAME, 1);
-        req.onupgradeneeded = (e)=>{
-          const d = req.result; if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE);
+      return new Promise(function(resolve, reject){
+        var req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = function(){
+          var d = req.result; if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE);
         };
-        req.onsuccess = ()=> resolve(req.result);
-        req.onerror = ()=> reject(req.error);
+        req.onsuccess = function(){ resolve(req.result); };
+        req.onerror = function(){ reject(req.error); };
       });
     }
     function idbGet(key){
-      return new Promise((resolve,reject)=>{
-        const tx = db.transaction(STORE,'readonly');
-        const st = tx.objectStore(STORE);
-        const rq = st.get(key);
-        rq.onsuccess = ()=> resolve(rq.result ?? null);
-        rq.onerror = ()=> reject(rq.error);
+      return new Promise(function(resolve,reject){
+        var tx = db.transaction(STORE,'readonly');
+        var st = tx.objectStore(STORE);
+        var rq = st.get(key);
+        rq.onsuccess = function(){ resolve(rq.result != null ? rq.result : null); };
+        rq.onerror = function(){ reject(rq.error); };
       });
     }
     function idbSet(key, val){
-      return new Promise((resolve,reject)=>{
-        const tx = db.transaction(STORE,'readwrite');
-        tx.oncomplete = ()=> resolve();
-        tx.onerror = ()=> reject(tx.error);
+      return new Promise(function(resolve,reject){
+        var tx = db.transaction(STORE,'readwrite');
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
         tx.objectStore(STORE).put(val, key);
       });
     }
 
-    const store = {
-      async init(){
+    var store = {
+      init: async function(){
         try{ db = await idbOpen(); useIDB = true; }
-        catch{ useIDB = false; }
-        $('storage').textContent = '保存: ' + (useIDB ? 'IndexedDB' : 'localStorage');
+        catch(e){ useIDB = false; }
+        document.getElementById('storage').textContent = '保存: ' + (useIDB ? 'IndexedDB' : 'localStorage');
       },
-      async load(){
-        if(useIDB){ try{ return (await idbGet('items')) || []; }catch{ return []; } }
-        try{ const raw = localStorage.getItem('mf_items_v1'); return raw ? JSON.parse(raw) : []; }catch{ return []; }
+      load: async function(){
+        if(useIDB){ try{ return (await idbGet('items')) || []; }catch(e){ return []; } }
+        try{ var raw = localStorage.getItem('mf_items_v1'); return raw ? JSON.parse(raw) : []; }catch(e){ return []; }
       },
-      async save(items){
+      save: async function(items){
         if(useIDB){ try{ await idbSet('items', items); return; }catch(e){ console.error(e); } }
         try{ localStorage.setItem('mf_items_v1', JSON.stringify(items)); }catch(e){ console.error(e); }
       }
@@ -166,90 +170,161 @@
 
     // ===== Persistence request (StorageManager) =====
     async function ensurePersistence(){
-      let supported = !!(navigator.storage && navigator.storage.persist);
-      let persisted = false;
-      try{ persisted = supported ? await navigator.storage.persist() : false; }catch{}
-      $('persist').textContent = '永続化: ' + (persisted ? '確保' : (supported ? '未確保' : '非対応'));
-      if(!persisted) $('warn').style.display = 'block';
+      var supported = !!(navigator.storage && navigator.storage.persist);
+      var persisted = false;
+      try{ persisted = supported ? await navigator.storage.persist() : false; }catch(e){}
+      document.getElementById('persist').textContent = '永続化: ' + (persisted ? '確保' : (supported ? '未確保' : '非対応'));
+      if(!persisted) document.getElementById('warn').style.display = 'block';
     }
 
     // ===== State & utils =====
-    const state = { items: [], filters: { q:'', month:'' }, editingId: null };
-    const $el = (id)=>document.getElementById(id);
-    const telHref = (raw='')=>{ const c=String(raw).replace(/[^+\d]/g,''); return c?`tel:${c}`:'' };
-    const toast = (m)=>{ const t=$el('toast'); t.textContent=m; t.style.display='block'; setTimeout(()=>t.style.display='none',1800); };
-    const setCount = (n)=> $el('count').textContent = `件数: ${n}`;
+    var state = { items: [], filters: { q:'', month:'' }, editingId: null };
+    function $(id){ return document.getElementById(id); }
+    function telHref(raw){ var c=String(raw||'').replace(/[^+\d]/g,''); return c?('tel:'+c):'' }
+    function toast(m){ var t=$('toast'); t.textContent=m; t.style.display='block'; setTimeout(function(){ t.style.display='none'; },1800); }
+    function setCount(n){ $('count').textContent = '件数: ' + n; }
 
     // ===== Validation =====
     function validate(p){ if(!p.fruit) return '果物名は必須です'; if(!p.farm) return '農園名は必須です'; if(!p.month) return '月を選択してください'; return '' }
 
     // ===== Rendering =====
-    function rowHTML(v){ const tel=v.phone?`<a href="${telHref(v.phone)}">${v.phone}</a>`:''; return `
-      <tr data-id="${v.id}">
-        <td data-label="月">${v.month??''}</td>
-        <td data-label="果物名">${v.fruit??''}</td>
-        <td data-label="農園">${v.farm??''}</td>
-        <td data-label="電話">${tel}</td>
-        <td data-label="発注"><input type="checkbox" data-action="toggle" ${v.ordered?'checked':''}></td>
-        <td data-label="メモ">${(v.note??'').replace(/\n/g,' ')}</td>
-        <td data-label="操作"><button data-action="edit">編集</button> <button data-action="delete">削除</button></td>
-      </tr>` }
+    function rowHTML(v){ var tel=v.phone?('<a href="'+telHref(v.phone)+'">'+v.phone+'</a>'):''; return (
+      '<tr data-id="'+v.id+'">\n'
+      +'  <td data-label="月">'+(v.month!=null?v.month:'')+'</td>\n'
+      +'  <td data-label="果物名">'+(v.fruit!=null?v.fruit:'')+'</td>\n'
+      +'  <td data-label="農園">'+(v.farm!=null?v.farm:'')+'</td>\n'
+      +'  <td data-label="電話">'+tel+'</td>\n'
+      +'  <td data-label="発注"><input type="checkbox" data-action="toggle" '+(v.ordered?'checked':'')+'></td>\n'
+      +'  <td data-label="メモ">'+String(v.note!=null?v.note:'').replace(/\n/g,' ')+'</td>\n'
+      +'  <td data-label="操作"><button data-action="edit" type="button">編集</button> <button data-action="delete" type="button">削除</button></td>\n'
+      +'</tr>' ); }
 
-    function applyFilters(items){ let view=items.slice(); if(state.filters.month) view=view.filter(v=>String(v.month)===state.filters.month); if(state.filters.q){ const q=state.filters.q.toLowerCase(); view=view.filter(v=>[v.fruit,v.farm,v.note,v.phone].some(x=>(x||'').toLowerCase().includes(q))); } view.sort((a,b)=> (a.month||0)-(b.month||0) || (a.fruit||'').localeCompare(b.fruit||'', 'ja') || (a.farm||'').localeCompare(b.farm||'', 'ja')); return view }
+    function applyFilters(items){
+      var view = items.slice();
+      if(state.filters.month) view = view.filter(function(v){ return String(v.month)===state.filters.month; });
+      if(state.filters.q){ var q=String(state.filters.q||'').toLowerCase(); view = view.filter(function(v){ return [v.fruit,v.farm,v.note,v.phone].some(function(x){ return String(x||'').toLowerCase().indexOf(q) !== -1; }); }); }
+      view.sort(function(a,b){ return (a.month||0)-(b.month||0) || String(a.fruit||'').localeCompare(String(b.fruit||''),'ja') || String(a.farm||'').localeCompare(String(b.farm||''),'ja'); });
+      return view;
+    }
 
-    function render(){ const view=applyFilters(state.items); const tbody=$el('tbody'); tbody.innerHTML=view.map(rowHTML).join(''); setCount(view.length) }
+    function render(){ var view=applyFilters(state.items); var tbody=$('tbody'); tbody.innerHTML=view.map(rowHTML).join(''); setCount(view.length); }
 
     // ===== CRUD =====
-    async function add(){ const p={ id:crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36), year:$el('year').value.trim(), month:Number($el('month').value), fruit:$el('fruit').value.trim(), farm:$el('farm').value.trim(), phone:$el('phone').value.trim(), ordered:$el('ordered').checked, note:$el('note').value.trim() }; const m=validate(p); if(m){ alert(m); return; } state.items.push(p); await store.save(state.items); render(); toast('登録しました') }
+    async function add(){
+      var id;
+      try{ id = (window.crypto&&crypto.randomUUID)?crypto.randomUUID():null; }catch(e){ id=null; }
+      if(!id) id = Math.random().toString(36).slice(2)+Date.now().toString(36);
+      var p={
+        id:id,
+        year:String($('year').value||'').trim(),
+        month:Number($('month').value),
+        fruit:String($('fruit').value||'').trim(),
+        farm:String($('farm').value||'').trim(),
+        phone:String($('phone').value||'').trim(),
+        ordered: !!$('ordered').checked,
+        note:String($('note').value||'').trim()
+      };
+      var m=validate(p); if(m){ alert(m); return; }
+      state.items.push(p); await store.save(state.items); render(); toast('登録しました');
+    }
 
-    async function remove(id){ state.items = state.items.filter(x=>x.id!==id); await store.save(state.items); render(); toast('削除しました') }
+    async function remove(id){ state.items = state.items.filter(function(x){ return x.id!==id; }); await store.save(state.items); render(); toast('削除しました'); }
 
-    function openEdit(id){ const r=state.items.find(x=>x.id===id); if(!r) return; state.editingId=id; $el('e_year').value=r.year||''; $el('e_month').value=String(r.month||''); $el('e_fruit').value=r.fruit||''; $el('e_farm').value=r.farm||''; $el('e_phone').value=r.phone||''; $el('e_ordered').checked=!!r.ordered; $el('e_note').value=r.note||''; $el('editBackdrop').style.display='flex' }
+    function openEdit(id){ var r=state.items.find(function(x){ return x.id===id; }); if(!r) return; state.editingId=id; $('e_year').value=r.year||''; $('e_month').value=String(r.month||''); $('e_fruit').value=r.fruit||''; $('e_farm').value=r.farm||''; $('e_phone').value=r.phone||''; $('e_ordered').checked=!!r.ordered; $('e_note').value=r.note||''; $('editBackdrop').style.display='flex'; }
 
-    async function saveEdit(){ const id=state.editingId; if(!id) return; const i=state.items.findIndex(x=>x.id===id); if(i<0) return; const upd={ ...state.items[i], year:$el('e_year').value.trim(), month:Number($el('e_month').value), fruit:$el('e_fruit').value.trim(), farm:$el('e_farm').value.trim(), phone:$el('e_phone').value.trim(), ordered:$el('e_ordered').checked, note:$el('e_note').value.trim() }; const m=validate(upd); if(m){ alert(m); return; } state.items[i]=upd; await store.save(state.items); render(); closeEdit(); toast('更新しました') }
+    async function saveEdit(){ var id=state.editingId; if(!id) return; var i=state.items.findIndex(function(x){ return x.id===id; }); if(i<0) return; var upd={
+        id: state.items[i].id,
+        year:String($('e_year').value||'').trim(),
+        month:Number($('e_month').value),
+        fruit:String($('e_fruit').value||'').trim(),
+        farm:String($('e_farm').value||'').trim(),
+        phone:String($('e_phone').value||'').trim(),
+        ordered: !!$('e_ordered').checked,
+        note:String($('e_note').value||'').trim()
+      };
+      var m=validate(upd); if(m){ alert(m); return; }
+      state.items[i]=upd; await store.save(state.items); render(); closeEdit(); toast('更新しました');
+    }
 
-    function closeEdit(){ state.editingId=null; $el('editBackdrop').style.display='none' }
+    function closeEdit(){ state.editingId=null; $('editBackdrop').style.display='none'; }
 
-    async function wipeAll(){ if(!state.items.length) return; if(confirm('全て削除しますか？')){ state.items=[]; await store.save(state.items); render(); toast('全削除しました') } }
+    function toggleOrdered(id, checked){
+      var i = state.items.findIndex(function(x){ return x.id===id; });
+      if(i<0) return;
+      state.items[i].ordered = !!checked;
+      store.save(state.items).then(function(){ render(); });
+    }
+
+    async function wipeAll(){ if(!state.items.length) return; if(confirm('全て削除しますか？')){ state.items=[]; await store.save(state.items); render(); toast('全削除しました'); } }
 
     // ===== Backup (optional) =====
-    function exportJSON(){ const data=JSON.stringify({items:state.items},null,2); const blob=new Blob([data],{type:'application/json'}); const a=document.createElement('a'); const url=URL.createObjectURL(blob); a.href=url; a.download='farmer-list-backup.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),0) }
-    async function importJSON(ev){ const f=ev.target.files?.[0]; if(!f) return; try{ const txt=await f.text(); const obj=JSON.parse(txt); if(!obj.items||!Array.isArray(obj.items)) throw new Error('形式が不正です'); state.items=obj.items; await store.save(state.items); render(); toast('インポートしました') }catch(e){ alert('読み込みに失敗しました'); console.error(e) } finally { ev.target.value='' }
+    function exportJSON(){ var data=JSON.stringify({items:state.items},null,2); var blob=new Blob([data],{type:'application/json'}); var a=document.createElement('a'); var url=URL.createObjectURL(blob); a.href=url; a.download='farmer-list-backup.json'; a.click(); setTimeout(function(){ URL.revokeObjectURL(url); },0); }
+    async function importJSON(ev){ var f=ev.target.files&&ev.target.files[0]; if(!f) return; try{ var txt=await f.text(); var obj=JSON.parse(txt); if(!obj.items||!Array.isArray(obj.items)) throw new Error('形式が不正です'); state.items=obj.items; await store.save(state.items); render(); toast('インポートしました'); }catch(e){ alert('読み込みに失敗しました'); console.error(e); } finally { ev.target.value=''; } }
+
+    // ===== Month Selects =====
+    function populateMonthsForm(sel){ if(!sel) return; sel.innerHTML=''; var cur=(new Date()).getMonth()+1; for(var m=1;m<=12;m++){ var o=document.createElement('option'); o.value=m; o.textContent=m+'月'; if(m===cur) o.selected=true; sel.appendChild(o);} }
+    function populateMonthsEdit(sel){ if(!sel) return; sel.innerHTML=''; for(var m=1;m<=12;m++){ var o=document.createElement('option'); o.value=m; o.textContent=m+'月'; sel.appendChild(o);} }
+    function populateMonthsFilter(sel){ if(!sel) return; sel.innerHTML=''; var any=document.createElement('option'); any.value=''; any.textContent='すべての月'; sel.appendChild(any); for(var m=1;m<=12;m++){ var o=document.createElement('option'); o.value=m; o.textContent=m+'月'; sel.appendChild(o);} }
+
+    // ===== Sanity tests (non-destructive) =====
+    function sanityTests(){
+      try{
+        console.assert(document.getElementById('month').options.length>=12, 'month options missing');
+        console.assert(document.getElementById('tbody'), 'tbody missing');
+        console.log('[sanity] OK');
+      }catch(e){ console.warn('[sanity] failed', e); }
+    }
 
     // ===== Init =====
-    function populateMonths(sel){ for(let m=1;m<=12;m++){ const o=document.createElement('option'); o.value=m; o.textContent=`${m}月`; sel.appendChild(o) } }
+    window.addEventListener('DOMContentLoaded', async function(){
+      // months
+      populateMonthsForm(document.getElementById('month'));
+      populateMonthsEdit(document.getElementById('e_month'));
+      populateMonthsFilter(document.getElementById('fMonth'));
+      ['month','e_month','fMonth'].forEach(function(id){ var s=document.getElementById(id); if(s) s.addEventListener('focus', function(){ if(!s.options.length){ if(id==='month') populateMonthsForm(s); else if(id==='e_month') populateMonthsEdit(s); else populateMonthsFilter(s); } }); });
 
-    window.addEventListener('DOMContentLoaded', async ()=>{
-      populateMonths($el('month')); populateMonths($el('e_month')); populateMonths($el('fMonth'));
-      $el('storage').textContent = '保存: 検出中…';
+      // storage & persistence
       await store.init();
       await ensurePersistence();
+
+      // load & render
       state.items = await store.load();
       render();
-      $el('status').textContent='準備OK';
+      document.getElementById('status').textContent='準備OK';
+
       // filters
-      $el('q').addEventListener('input', (e)=>{ state.filters.q=e.target.value; render() });
-      $el('fMonth').addEventListener('change', (e)=>{ state.filters.month=e.target.value; render() });
-      $el('resetFilters').addEventListener('click', ()=>{ state.filters={q:'',month:''}; $el('q').value=''; $el('fMonth').value=''; render() });
+      document.getElementById('q').addEventListener('input', function(e){ state.filters.q=e.target.value; render(); });
+      document.getElementById('fMonth').addEventListener('change', function(e){ state.filters.month=e.target.value; render(); });
+      document.getElementById('resetFilters').addEventListener('click', function(){ state.filters={q:'',month:''}; document.getElementById('q').value=''; document.getElementById('fMonth').value=''; render(); });
+
       // form
-      $el('add').addEventListener('click', add);
-      $el('wipe').addEventListener('click', wipeAll);
-      $el('exp').addEventListener('click', exportJSON);
-      $el('impBtn').addEventListener('click', ()=> $el('imp').click());
-      $el('imp').addEventListener('change', importJSON);
+      document.getElementById('add').addEventListener('click', add);
+      document.getElementById('wipe').addEventListener('click', wipeAll);
+      document.getElementById('exp').addEventListener('click', exportJSON);
+      document.getElementById('impBtn').addEventListener('click', function(){ document.getElementById('imp').click(); });
+      document.getElementById('imp').addEventListener('change', importJSON);
+
+      // modal buttons
+      document.getElementById('cancelEdit').addEventListener('click', function(){ closeEdit(); });
+      document.getElementById('saveEdit').addEventListener('click', function(){ saveEdit(); });
+      // close on backdrop click
+      document.getElementById('editBackdrop').addEventListener('click', function(ev){ if (ev.target === this) { closeEdit(); } });
+      // close on ESC key
+      document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' || ev.keyCode === 27){ closeEdit(); } });
+
       // table delegation
-      $el('tbody').addEventListener('click', (ev)=>{
-        const tr=ev.target.closest('tr[data-id]'); if(!tr) return; const id=tr.getAttribute('data-id');
-        const act=ev.target.getAttribute('data-action');
-        if(act==='edit') openEdit(id);
-        if(act==='delete') remove(id);
+      document.getElementById('tbody').addEventListener('click', function(ev){
+        var tr=ev.target.closest('tr'); if(!tr) return; var id=tr.getAttribute('data-id');
+        var btn=ev.target.closest('button[data-action]');
+        if(btn){ var act=btn.getAttribute('data-action'); if(act==='edit') openEdit(id); if(act==='delete') remove(id); }
       });
-      $el('tbody').addEventListener('change', (ev)=>{
-        if(ev.target.matches('input[type="checkbox"][data-action="toggle"]')){
-          const id=ev.target.closest('tr')?.getAttribute('data-id');
-          toggleOrdered(id, ev.target.checked);
+      document.getElementById('tbody').addEventListener('change', function(ev){
+        if(ev.target && ev.target.tagName==='INPUT' && ev.target.type==='checkbox' && ev.target.getAttribute('data-action')==='toggle'){
+          var tr=ev.target.closest('tr'); var id=tr?tr.getAttribute('data-id'):null; if(id) toggleOrdered(id, ev.target.checked);
         }
       });
+
+      sanityTests();
     });
   </script>
 </body>
