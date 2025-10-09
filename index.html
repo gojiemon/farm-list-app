@@ -2,341 +2,291 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>月別・農家リスト（編集機能付き）</title>
+  <title>月別・農家リスト（リファクタ済み・本番構成）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; margin: 18px; }
-    h1 { font-size: 20px; margin: 0 0 12px; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
-    input, select, textarea, button { padding: 8px; font-size: 14px; }
-    input[type="checkbox"] { transform: scale(1.2); }
-    textarea { width: 100%; min-height: 60px; }
-    .card { border: 1px solid #e5e5e5; border-radius: 8px; padding: 10px; margin: 10px 0; background: #fff; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; overflow-x: auto; display: block; }
-    th, td { border: 1px solid #ddd; padding: 8px; word-break: break-word; }
-    th { background: #f7f7f7; }
-    .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .muted { color: #666; font-size: 12px; }
-    .danger { color: #b00020; }
-    .nowrap { white-space: nowrap; }
-    .num { text-align: right; }
+    /* ===== Base ===== */
+    :root { --bg:#ffffff; --fg:#111827; --muted:#6b7280; --line:#e5e7eb; --card:#ffffff; }
+    * { box-sizing: border-box; }
+    body { margin:18px; font-family: system-ui, -apple-system, 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif; color:var(--fg); background:var(--bg); }
+    h1 { font-size:20px; margin:0 0 10px; }
+    .row { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0; }
+    input, select, textarea, button { font-size:14px; padding:8px; }
+    textarea { width:100%; min-height:60px; }
+    button { cursor:pointer; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; margin:10px 0; }
+    .bar { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--muted); }
+    .pill { background:#f3f4f6; border:1px solid var(--line); border-radius:999px; padding:2px 10px; }
 
-    /* モーダル */
-    .modal-backdrop {
-      position: fixed; inset: 0; background: rgba(0,0,0,.4);
-      display: none; align-items: center; justify-content: center; z-index: 1000;
-    }
-    .modal {
-      background: #fff; width: min(680px, 92vw); border-radius: 10px; padding: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,.2);
-    }
-    .modal header { font-weight: 700; margin-bottom: 6px; }
-    .modal .footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+    /* ===== Table ===== */
+    .tablewrap { max-height:60vh; overflow:auto; border:1px solid var(--line); border-radius:10px; }
+    table { width:100%; border-collapse:collapse; }
+    thead th { position:sticky; top:0; background:#f8fafc; text-align:left; padding:8px; border-bottom:1px solid var(--line); }
+    td { padding:8px; border-bottom:1px solid var(--line); vertical-align:top; }
+
+    /* ===== Modal ===== */
+    .backdrop { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:50; }
+    .modal { width:min(680px, 92vw); background:#fff; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.25); padding:12px; }
+    .modal header { font-weight:700; margin-bottom:8px; }
+    .modal .footer { display:flex; gap:8px; justify-content:flex-end; }
+
+    /* ===== Toast ===== */
+    .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.8); color:#fff; padding:8px 12px; border-radius:8px; display:none; font-size:12px; }
+
+    /* ===== Mobile Card-like rows (fallback) ===== */
+    @media (max-width:640px){ thead { display:none; } table, tbody, tr, td { display:block; width:100%; } td { display:flex; gap:8px; } td::before { content: attr(data-label); min-width:96px; color:var(--muted); } }
   </style>
-  <!-- IndexedDB ライブラリ -->
-  <script src="https://unpkg.com/idb-keyval@6/dist/idb-keyval.iife.js"></script>
 </head>
 <body>
   <h1>🍇 月別・農家リスト</h1>
+  <div class="bar">
+    <span id="status" class="pill">準備中…</span>
+    <span id="count" class="pill">件数: 0</span>
+    <span id="storage" class="pill">保存: localStorage</span>
+  </div>
 
-  <!-- 入力フォーム -->
-  <div class="card">
+  <!-- Filters -->
+  <div class="card" aria-label="フィルター">
     <div class="row">
-      <input id="year" type="number" placeholder="年（例：2025）" style="width:120px" />
-      <select id="month" style="width:120px">
-        <option value="" disabled selected>月を選択</option>
-        <script>for(let m=1;m<=12;m++)document.write(`<option value="${m}">${m}月</option>`);</script>
+      <input id="q" placeholder="果物名・農園名・メモ・電話で検索" style="flex:1 1 260px" />
+      <select id="fMonth" style="width:150px">
+        <option value="">すべての月</option>
       </select>
-      <input id="fruit" placeholder="果物名（例：シャインマスカット）" style="flex:1 1 220px" />
-    </div>
-    <div class="row">
-      <input id="farmName" placeholder="農園名（屋号）" style="flex:1 1 220px" />
-      <input id="contactPhone" placeholder="電話" style="flex:1 1 160px" />
-      <input id="contactEmail" placeholder="メール" style="flex:1 1 200px" />
-    </div>
-    <div class="row">
-      <label><input id="ordered" type="checkbox" /> 発注済みにする</label>
-    </div>
-    <div class="row">
-      <textarea id="note" placeholder="メモ（味・糖度・保存のコツ・注意点など）"></textarea>
-    </div>
-    <div class="row">
-      <button onclick="addItem()">登録</button>
-      <button onclick="clearForm()">クリア</button>
-      <span class="muted">※IndexedDBに保存（APIなし／オフラインOK）</span>
+      <button id="resetFilters">リセット</button>
     </div>
   </div>
 
-  <!-- フィルタ & 書き出し/バックアップ -->
-  <div class="card">
-    <div class="controls">
-      <input id="filterYear" type="number" placeholder="年で絞る（例：2025）" oninput="render()" style="width:140px" />
-      <select id="filterMonth" onchange="render()" style="width:120px">
-        <option value="">月（すべて）</option>
-        <script>for(let m=1;m<=12;m++)document.write(`<option value="${m}">${m}月</option>`);</script>
-      </select>
-      <input id="keyword" placeholder="検索（果物／農園／連絡先／メモ）" oninput="render()" style="flex:1 1 240px" />
-      <label class="nowrap"><input id="onlyOrdered" type="checkbox" onchange="render()" /> 発注済みのみ</label>
-      <button onclick="downloadCSV(false)">CSV出力（表示中）</button>
-      <button onclick="downloadCSV(true)">CSV出力（全件）</button>
-      <button onclick="exportJSON()">JSONエクスポート</button>
-      <label class="nowrap"><input type="file" id="importFile" accept="application/json" onchange="importJSON(event)" /> JSONインポート</label>
-      <button class="danger" onclick="confirmClear()">全削除</button>
+  <!-- Form -->
+  <div class="card" aria-label="登録フォーム">
+    <div class="row">
+      <input id="year" type="number" placeholder="年 (例:2025)" style="width:120px" />
+      <select id="month" style="width:120px"></select>
+      <input id="fruit" placeholder="果物名" style="flex:1 1 220px" />
+    </div>
+    <div class="row">
+      <input id="farm" placeholder="農園名" style="flex:1 1 220px" />
+      <input id="phone" placeholder="電話 (例:090-1234-5678)" style="flex:1 1 220px" />
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="ordered" /> 発注済み</label>
+    </div>
+    <div class="row">
+      <textarea id="note" placeholder="メモ"></textarea>
+    </div>
+    <div class="row">
+      <button id="add">登録</button>
+      <button id="wipe">全削除</button>
     </div>
   </div>
 
-  <!-- 一覧 -->
-  <table>
-    <thead>
-      <tr>
-        <th class="num">年</th>
-        <th class="num">月</th>
+  <!-- List -->
+  <div class="tablewrap" aria-label="一覧">
+    <table>
+      <thead><tr>
+        <th style="width:70px">月</th>
         <th>果物名</th>
-        <th>農園名</th>
-        <th>連絡先（電話 / メール）</th>
-        <th>発注</th>
+        <th>農園</th>
+        <th>電話</th>
+        <th style="width:70px">発注</th>
         <th>メモ</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody id="tbody"></tbody>
-  </table>
+        <th style="width:150px">操作</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
 
-  <!-- 編集モーダル -->
-  <div id="editBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Edit Modal -->
+  <div id="editBackdrop" class="backdrop" role="dialog" aria-modal="true">
     <div class="modal">
       <header>行を編集</header>
       <div class="row">
-        <input id="edit_year" type="number" placeholder="年" style="width:120px" />
-        <select id="edit_month" style="width:120px">
-          <script>for(let m=1;m<=12;m++)document.write(`<option value="${m}">${m}月</option>`);</script>
-        </select>
-        <input id="edit_fruit" placeholder="果物名" style="flex:1 1 220px" />
+        <input id="e_year" type="number" placeholder="年" style="width:120px" />
+        <select id="e_month" style="width:120px"></select>
+        <input id="e_fruit" placeholder="果物名" style="flex:1 1 220px" />
       </div>
       <div class="row">
-        <input id="edit_farmName" placeholder="農園名（屋号）" style="flex:1 1 220px" />
-        <input id="edit_phone" placeholder="電話" style="flex:1 1 160px" />
-        <input id="edit_email" placeholder="メール" style="flex:1 1 200px" />
+        <input id="e_farm" placeholder="農園名" style="flex:1 1 220px" />
+        <input id="e_phone" placeholder="電話" style="flex:1 1 220px" />
       </div>
       <div class="row">
-        <label><input id="edit_ordered" type="checkbox" /> 発注済み</label>
+        <label><input type="checkbox" id="e_ordered" /> 発注済み</label>
       </div>
-      <div class="row">
-        <textarea id="edit_note" placeholder="メモ"></textarea>
-      </div>
+      <div class="row"><textarea id="e_note" placeholder="メモ"></textarea></div>
       <div class="footer">
-        <button onclick="closeEdit()">キャンセル</button>
-        <button onclick="saveEdit()">保存</button>
+        <button id="cancelEdit">キャンセル</button>
+        <button id="saveEdit">保存</button>
       </div>
     </div>
   </div>
 
   <script>
-    // ====== 保存層：IndexedDB（idb-keyval） ======
-    const store = new idbKeyval.Store('monthly-farmers-db', 'items-store');
-    async function loadItems(){ try{return (await idbKeyval.get('items', store))||[]}catch{return[]} }
-    async function saveItems(){ await idbKeyval.set('items', items, store) }
+    // ===== Config & State =====
+    const SKEY = 'mf_items_v1';
+    const state = {
+      items: [],
+      filters: { q: '', month: '' },
+      editingId: null,
+    };
 
-    // ====== アプリ状態 ======
-    /** @type {Array<{id:string,year:number|null,month:number|null,fruit:string,farmName:string,phone:string,email:string,ordered:boolean,note:string,createdAt:string}>} */
-    let items = [];
-    let editingId = null; // 編集対象のid
+    // ===== Utils =====
+    const $ = (id) => document.getElementById(id);
+    const uuid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const telHref = (raw='') => {
+      const cleaned = String(raw).replace(/[^+\d]/g, '');
+      return cleaned ? `tel:${cleaned}` : '';
+    };
+    const toast = (msg) => { const t=$('toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none', 1800); };
+    const setCount = (n) => $('count').textContent = `件数: ${n}`;
 
-    // ====== ユーティリティ ======
-    const $ = id => document.getElementById(id);
-    const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const escapeCsv = s => { const v=(s??"").toString().replace(/"/g,'""'); return /[",\n]/.test(v)?`"${v}"`:v; };
+    // ===== Storage =====
+    const store = {
+      load(){ try{ const raw = localStorage.getItem(SKEY); return raw ? JSON.parse(raw) : []; }catch{ return []; } },
+      save(items){ try{ localStorage.setItem(SKEY, JSON.stringify(items)); }catch(e){ console.error(e); } }
+    };
 
-    // ====== 追加 ======
-    async function addItem(){
-      const yearVal = $("year").value.trim();
-      const monthVal = $("month").value;
-      const year = yearVal ? Number(yearVal) : null;
-      const month = monthVal ? Number(monthVal) : null;
-      const fruit = $("fruit").value.trim();
-      const farmName = $("farmName").value.trim();
-      const phone = $("contactPhone").value.trim();
-      const email = $("contactEmail").value.trim();
-      const ordered = $("ordered").checked;
-      const note = $("note").value.trim();
-
-      if (!fruit) { alert("果物名は必須です"); return; }
-      if (!farmName) { alert("農園名は必須です"); return; }
-      if (!year) { alert("年を入力してください"); return; }
-      if (!month) { alert("月を選択してください"); return; }
-
-      items.push({ id: uid(), year, month, fruit, farmName, phone, email, ordered, note, createdAt: new Date().toISOString() });
-      await saveItems();
-      clearForm(); render();
+    // ===== Validation =====
+    function validate(payload){
+      if(!payload.fruit) return '果物名は必須です';
+      if(!payload.farm) return '農園名は必須です';
+      if(!payload.month) return '月を選択してください';
+      return '';
     }
 
-    function clearForm(){
-      $("fruit").value = ""; $("farmName").value = "";
-      $("contactPhone").value = ""; $("contactEmail").value = "";
-      $("ordered").checked = false; $("note").value = "";
-      // 年・月は連続入力のため残す
-    }
-
-    async function confirmClear(){
-      if (!items.length) return;
-      if (confirm("保存データをすべて削除します。よろしいですか？")){
-        items = []; await saveItems(); render();
-      }
-    }
-
-    async function toggleOrdered(id, checked){
-      const i = items.findIndex(x => x.id === id);
-      if (i >= 0){ items[i].ordered = checked; await saveItems(); }
-    }
-
-    async function removeItem(id){
-      if (!confirm("この行を削除しますか？")) return;
-      items = items.filter(x => x.id !== id);
-      await saveItems(); render();
-    }
-
-    // ====== 編集（モーダル） ======
-    function openEdit(id){
-      const row = items.find(x => x.id === id);
-      if (!row) return;
-      editingId = id;
-      $("edit_year").value = row.year ?? "";
-      $("edit_month").value = row.month ?? "";
-      $("edit_fruit").value = row.fruit || "";
-      $("edit_farmName").value = row.farmName || "";
-      $("edit_phone").value = row.phone || "";
-      $("edit_email").value = row.email || "";
-      $("edit_ordered").checked = !!row.ordered;
-      $("edit_note").value = row.note || "";
-      $("editBackdrop").style.display = "flex";
-    }
-
-    function closeEdit(){
-      editingId = null;
-      $("editBackdrop").style.display = "none";
-    }
-
-    async function saveEdit(){
-      if (!editingId) return;
-      const yearVal = $("edit_year").value.trim();
-      const monthVal = $("edit_month").value;
-      const fruit = $("edit_fruit").value.trim();
-      const farmName = $("edit_farmName").value.trim();
-
-      if (!fruit){ alert("果物名は必須です"); return; }
-      if (!farmName){ alert("農園名は必須です"); return; }
-      if (!yearVal){ alert("年を入力してください"); return; }
-      if (!monthVal){ alert("月を選択してください"); return; }
-
-      const i = items.findIndex(x => x.id === editingId);
-      if (i >= 0){
-        items[i] = {
-          ...items[i],
-          year: Number(yearVal),
-          month: Number(monthVal),
-          fruit: $("edit_fruit").value.trim(),
-          farmName: $("edit_farmName").value.trim(),
-          phone: $("edit_phone").value.trim(),
-          email: $("edit_email").value.trim(),
-          ordered: $("edit_ordered").checked,
-          note: $("edit_note").value.trim(),
-        };
-        await saveItems();
-      }
-      closeEdit(); render();
-    }
-
-    // ====== 表示 ======
-    function render(){
-      const yearStr = $("filterYear").value.trim();
-      const monthStr = $("filterMonth").value;
-      const kw = $("keyword").value.trim().toLowerCase();
-      const onlyOrdered = $("onlyOrdered").checked;
-
-      let view = items.slice().sort((a,b)=>{
-        const ay=a.year??-Infinity, by=b.year??-Infinity; if(ay!==by) return by-ay;
-        const am=a.month??0, bm=b.month??0; if(am!==bm) return am-bm;
-        return a.fruit.localeCompare(b.fruit,"ja");
-      });
-
-      if (yearStr) view = view.filter(v => (v.year ?? "") === Number(yearStr));
-      if (monthStr) view = view.filter(v => (v.month ?? "") === Number(monthStr));
-      if (onlyOrdered) view = view.filter(v => v.ordered);
-      if (kw){
-        view = view.filter(v => [v.fruit,v.farmName,v.phone,v.email,v.note]
-          .some(x => (x||"").toLowerCase().includes(kw)));
-      }
-
-      const tbody = $("tbody"); tbody.innerHTML = "";
-      view.forEach(v=>{
-        const tr=document.createElement("tr");
-        tr.innerHTML = `
-          <td class="num">${v.year ?? ""}</td>
-          <td class="num">${v.month ?? ""}</td>
-          <td>${v.fruit}</td>
-          <td>${v.farmName}</td>
-          <td>${v.phone || ""}${v.phone && v.email ? " / " : ""}${v.email || ""}</td>
-          <td class="nowrap"><input type="checkbox" ${v.ordered?"checked":""} onclick="toggleOrdered('${v.id}', this.checked)" /></td>
-          <td>${v.note || ""}</td>
-          <td class="nowrap">
-            <button onclick="openEdit('${v.id}')">編集</button>
-            <button onclick="removeItem('${v.id}')">削除</button>
+    // ===== Rendering =====
+    function rowHTML(v){
+      const tel = v.phone ? `<a href="${telHref(v.phone)}">${v.phone}</a>` : '';
+      return `
+        <tr data-id="${v.id}">
+          <td data-label="月">${v.month ?? ''}</td>
+          <td data-label="果物名">${v.fruit ?? ''}</td>
+          <td data-label="農園">${v.farm ?? ''}</td>
+          <td data-label="電話">${tel}</td>
+          <td data-label="発注">
+            <input type="checkbox" data-action="toggle" ${v.ordered ? 'checked' : ''} />
           </td>
-        `;
-        tbody.appendChild(tr);
-      });
+          <td data-label="メモ">${(v.note ?? '').replace(/\n/g,' ')}</td>
+          <td data-label="操作">
+            <button data-action="edit">編集</button>
+            <button data-action="delete">削除</button>
+          </td>
+        </tr>`;
     }
 
-    // ====== CSV出力 ======
-    function downloadCSV(all=false){
-      const yearStr=$("filterYear").value.trim();
-      const monthStr=$("filterMonth").value;
-      const kw=$("keyword").value.trim().toLowerCase();
-      const onlyOrdered=$("onlyOrdered").checked;
-
-      let data=items.slice();
-      if(!all){
-        if(yearStr) data=data.filter(v=>(v.year??"")===Number(yearStr));
-        if(monthStr) data=data.filter(v=>(v.month??"")===Number(monthStr));
-        if(onlyOrdered) data=data.filter(v=>v.ordered);
-        if(kw) data=data.filter(v=>[v.fruit,v.farmName,v.phone,v.email,v.note]
-          .some(x=>(x||"").toLowerCase().includes(kw)));
+    function applyFilters(items){
+      let view = items.slice();
+      if(state.filters.month) view = view.filter(v => String(v.month) === state.filters.month);
+      if(state.filters.q){
+        const q = state.filters.q.toLowerCase();
+        view = view.filter(v => [v.fruit, v.farm, v.note, v.phone].some(x => (x||'').toLowerCase().includes(q)));
       }
-      if(!data.length){ alert("出力するデータがありません"); return; }
-
-      const header=["年","月","果物名","農園名","電話","メール","発注済み","メモ","登録日時ISO"];
-      const rows=data.map(v=>[
-        v.year??"", v.month??"", v.fruit, v.farmName, v.phone||"", v.email||"",
-        v.ordered?"TRUE":"FALSE", v.note||"", v.createdAt
-      ].map(escapeCsv).join(","));
-      const csv=[header.join(","), ...rows].join("\n");
-      const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"}); const url=URL.createObjectURL(blob);
-      const a=Object.assign(document.createElement("a"),{href:url,download:`monthly-farmers${all?"-all":""}.csv`});
-      a.click(); URL.revokeObjectURL(url);
+      // sort: 月 -> 果物 -> 農園
+      view.sort((a,b)=> (a.month||0)-(b.month||0) || (a.fruit||'').localeCompare(b.fruit||'', 'ja') || (a.farm||'').localeCompare(b.farm||'', 'ja'));
+      return view;
     }
 
-    // ====== JSONバックアップ ======
-    function exportJSON(){
-      const data=JSON.stringify({version:1,items},null,2);
-      const blob=new Blob([data],{type:"application/json"}); const url=URL.createObjectURL(blob);
-      const a=Object.assign(document.createElement("a"),{href:url,download:`monthly-farmers-backup-${new Date().toISOString().slice(0,10)}.json`});
-      a.click(); URL.revokeObjectURL(url);
+    function render(){
+      const view = applyFilters(state.items);
+      const tbody = $('tbody');
+      tbody.innerHTML = view.map(rowHTML).join('');
+      setCount(view.length);
     }
 
-    async function importJSON(ev){
-      const file=ev.target.files?.[0]; if(!file) return;
-      const text=await file.text();
-      try{
-        const obj=JSON.parse(text);
-        if(!obj.items||!Array.isArray(obj.items)) throw new Error("不正な形式");
-        if(!confirm("このバックアップで上書きします。よろしいですか？")) return;
-        items=obj.items; await saveItems(); render(); alert("インポートしました");
-      }catch(e){ alert("読み込みに失敗しました："+e.message); }
-      finally{ ev.target.value=""; }
+    // ===== CRUD =====
+    function add(){
+      const payload = {
+        id: uuid(),
+        year: $('year').value.trim(),
+        month: Number($('month').value),
+        fruit: $('fruit').value.trim(),
+        farm: $('farm').value.trim(),
+        phone: $('phone').value.trim(),
+        ordered: $('ordered').checked,
+        note: $('note').value.trim(),
+      };
+      const m = validate(payload); if(m){ alert(m); return; }
+      state.items.push(payload); store.save(state.items); render(); toast('登録しました');
     }
 
-    // ====== 初期化 ======
-    (async()=>{ items=await loadItems(); render(); })();
+    function remove(id){
+      state.items = state.items.filter(x => x.id !== id);
+      store.save(state.items); render(); toast('削除しました');
+    }
+
+    function openEdit(id){
+      const r = state.items.find(x => x.id === id); if(!r) return;
+      state.editingId = id;
+      $('e_year').value = r.year || '';
+      $('e_month').value = String(r.month || '');
+      $('e_fruit').value = r.fruit || '';
+      $('e_farm').value = r.farm || '';
+      $('e_phone').value = r.phone || '';
+      $('e_ordered').checked = !!r.ordered;
+      $('e_note').value = r.note || '';
+      $('editBackdrop').style.display = 'flex';
+    }
+
+    function closeEdit(){ state.editingId = null; $('editBackdrop').style.display = 'none'; }
+
+    function saveEdit(){
+      const id = state.editingId; if(!id) return;
+      const i = state.items.findIndex(x => x.id === id); if(i < 0) return;
+      const upd = {
+        ...state.items[i],
+        year: $('e_year').value.trim(),
+        month: Number($('e_month').value),
+        fruit: $('e_fruit').value.trim(),
+        farm: $('e_farm').value.trim(),
+        phone: $('e_phone').value.trim(),
+        ordered: $('e_ordered').checked,
+        note: $('e_note').value.trim(),
+      };
+      const m = validate(upd); if(m){ alert(m); return; }
+      state.items[i] = upd; store.save(state.items); render(); closeEdit(); toast('更新しました');
+    }
+
+    function toggleOrdered(id, checked){
+      const i = state.items.findIndex(x => x.id === id); if(i < 0) return;
+      state.items[i].ordered = checked; store.save(state.items); render();
+    }
+
+    function wipeAll(){ if(!state.items.length) return; if(confirm('全て削除しますか？')){ state.items = []; store.save(state.items); render(); toast('全削除しました'); } }
+
+    // ===== Init =====
+    function populateMonths(select){ for(let m=1;m<=12;m++){ const o=document.createElement('option'); o.value=m; o.textContent=`${m}月`; select.appendChild(o); } }
+
+    window.addEventListener('DOMContentLoaded', ()=>{
+      // populate months
+      populateMonths($('month')); populateMonths($('e_month')); populateMonths($('fMonth'));
+      // initial status
+      $('storage').textContent = '保存: localStorage';
+      $('status').textContent = '準備OK';
+      // load
+      state.items = store.load(); render();
+      // filters
+      $('q').addEventListener('input', (e)=>{ state.filters.q = e.target.value; render(); });
+      $('fMonth').addEventListener('change', (e)=>{ state.filters.month = e.target.value; render(); });
+      $('resetFilters').addEventListener('click', ()=>{ state.filters = { q:'', month:'' }; $('q').value=''; $('fMonth').value=''; render(); });
+      // form actions
+      $('add').addEventListener('click', add);
+      $('wipe').addEventListener('click', wipeAll);
+      // edit modal
+      $('cancelEdit').addEventListener('click', closeEdit);
+      $('saveEdit').addEventListener('click', saveEdit);
+      // table delegation
+      $('tbody').addEventListener('click', (ev)=>{
+        const tr = ev.target.closest('tr[data-id]'); if(!tr) return; const id = tr.getAttribute('data-id');
+        if(ev.target.matches('button[data-action="edit"], button') && ev.target.dataset.action === 'edit') openEdit(id);
+        else if(ev.target.matches('button[data-action="delete"], button') && ev.target.dataset.action === 'delete') remove(id);
+      });
+      $('tbody').addEventListener('change', (ev)=>{
+        if(ev.target.matches('input[type="checkbox"][data-action="toggle"]')){
+          const id = ev.target.closest('tr')?.getAttribute('data-id');
+          toggleOrdered(id, ev.target.checked);
+        }
+      });
+    });
   </script>
 </body>
 </html>
