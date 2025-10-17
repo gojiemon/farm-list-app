@@ -69,6 +69,9 @@
       <input id="phone" placeholder="電話 (例:090-1234-5678)" style="flex:1 1 220px" />
     </div>
     <div class="row">
+      <input id="address" placeholder="住所" style="flex:1 1 460px" />
+    </div>
+    <div class="row">
       <label><input type="checkbox" id="ordered" /> 発注済み</label>
     </div>
     <div class="row">
@@ -90,6 +93,7 @@
         <th style="width:70px">月</th>
         <th>果物名</th>
         <th>農園</th>
+        <th>住所</th>
         <th>電話</th>
         <th style="width:70px">発注</th>
         <th>メモ</th>
@@ -113,6 +117,9 @@
       <div class="row">
         <input id="e_farm" placeholder="農園名" style="flex:1 1 220px" />
         <input id="e_phone" placeholder="電話" style="flex:1 1 220px" />
+      </div>
+      <div class="row">
+        <input id="e_address" placeholder="住所" style="flex:1 1 460px" />
       </div>
       <div class="row">
         <label><input type="checkbox" id="e_ordered" /> 発注済み</label>
@@ -231,7 +238,7 @@
     ];
     var DEFAULT_MORE = [
       { id: genId(), year:'', month:7,  fruit:'沖縄マンゴー',   farm:'たかすじマンゴー園', phone:'098-968-5373', ordered:false, note:'予備: 090-4471-8225' },
-      { id: genId(), year:'', month:4,  fruit:'ネクタリン',     farm:'フルーツ工房タンザワ', phone:'090-4958-9737', ordered:false, note:'' },
+      { id: genId(), year:'', month:6,  fruit:'ネクタリン',     farm:'フルーツ工房タンザワ', phone:'090-4958-9737', ordered:false, note:'' },
       { id: genId(), year:'', month:7,  fruit:'八ヶ岳ブルーベリー', farm:'ウッドベリーズ農園', phone:'', ordered:false, note:'' },
       { id: genId(), year:'', month:7,  fruit:'いちじく',       farm:'宮内農園',           phone:'090-5376-6942', ordered:false, note:'' },
       { id: genId(), year:'', month:8,  fruit:'生トウモロコシ', farm:'ハマラノーエン 柳沢', phone:'080-5145-0396', ordered:false, note:'' },
@@ -244,7 +251,12 @@
       { id: genId(), year:'', month:9,  fruit:'プルーン',       farm:'長田農園',           phone:'090-2259-1388', ordered:false, note:'' },
       { id: genId(), year:'', month:10, fruit:'ヘベス',         farm:'黒木農園',           phone:'', ordered:false, note:'' },
       { id: genId(), year:'', month:10, fruit:'ライム',         farm:'ウォーチャードアグリ カルチャーファーマー', phone:'', ordered:false, note:'' },
-      { id: genId(), year:'', month:10, fruit:'洋梨',           farm:'関農園',             phone:'090-668-4776', ordered:false, note:'品種: バラード / ラ・フランス' }
+      { id: genId(), year:'', month:10, fruit:'洋梨',           farm:'関農園',             phone:'090-668-4776', ordered:false, note:'品種: バラード / ラ・フランス' },
+      { id: genId(), year:'', month:11, fruit:'富有柿',         farm:'山本農園',           phone:'',             ordered:false, note:'' },
+      { id: genId(), year:'', month:11, fruit:'柿',             farm:'荘埜園',             phone:'090-3400-6649', ordered:false, note:'品種: 次郎柿 / 東京紅' },
+      { id: genId(), year:'', month:11, fruit:'みかん',         farm:'早津みかん園',       phone:'090-9720-6889', ordered:false, note:'品種: おひさまオレンジ' },
+      { id: genId(), year:'', month:11, fruit:'レインボーレッドキウイ', farm:'輝らり果樹園',     phone:'090-7543-3100', ordered:false, note:'入荷予定: 11/9' },
+      { id: genId(), year:'', month:1,  fruit:'金柑',           farm:'内山金柑園',         phone:'080-6414-6811', ordered:false, note:'' }
       // 月未定: プラム / 杉山農園（ご指定ください）
     ];
     function accentFromFarm(name){
@@ -277,6 +289,7 @@
       +'  <td data-label="月">'+(v.month!=null?v.month:'')+'</td>\n'
       +'  <td data-label="果物名">'+(v.fruit!=null?v.fruit:'')+'</td>\n'
       +'  <td data-label="農園">'+(v.farm!=null?v.farm:'')+'</td>\n'
+      +'  <td data-label="住所">'+(v.address!=null?v.address:'')+'</td>\n'
       +'  <td data-label="電話">'+tel+'</td>\n'
       +'  <td data-label="発注"><input type="checkbox" data-action="toggle" '+(v.ordered?'checked':'')+'></td>\n'
       +'  <td data-label="メモ">'+String(v.note!=null?v.note:'').replace(/\n/g,' ')+'</td>\n'
@@ -286,7 +299,7 @@
     function applyFilters(items){
       var view = items.slice();
       if(state.filters.month) view = view.filter(function(v){ return String(v.month)===state.filters.month; });
-      if(state.filters.q){ var q=String(state.filters.q||'').toLowerCase(); view = view.filter(function(v){ return [v.fruit,v.farm,v.note,v.phone].some(function(x){ return String(x||'').toLowerCase().indexOf(q) !== -1; }); }); }
+      if(state.filters.q){ var q=String(state.filters.q||'').toLowerCase(); view = view.filter(function(v){ return [v.fruit,v.farm,v.address,v.note,v.phone].some(function(x){ return String(x||'').toLowerCase().indexOf(q) !== -1; }); }); }
       view.sort(function(a,b){ return (a.month||0)-(b.month||0) || String(a.fruit||'').localeCompare(String(b.fruit||''),'ja') || String(a.farm||'').localeCompare(String(b.farm||''),'ja'); });
       return view;
     }
@@ -306,6 +319,7 @@
         fruit:String($('fruit').value||'').trim(),
         farm:String($('farm').value||'').trim(),
         phone:String($('phone').value||'').trim(),
+        address:String($('address').value||'').trim(),
         ordered: !!$('ordered').checked,
         note:String($('note').value||'').trim()
       };
@@ -315,7 +329,7 @@
 
     async function remove(id){ state.items = state.items.filter(function(x){ return x.id!==id; }); await store.save(state.items); render(); toast('削除しました'); }
 
-    function openEdit(id){ var r=state.items.find(function(x){ return x.id===id; }); if(!r) return; state.editingId=id; $('e_year').value=r.year||''; $('e_month').value=String(r.month||''); $('e_fruit').value=r.fruit||''; $('e_farm').value=r.farm||''; $('e_phone').value=r.phone||''; $('e_ordered').checked=!!r.ordered; $('e_note').value=r.note||''; $('editBackdrop').style.display='flex'; }
+    function openEdit(id){ var r=state.items.find(function(x){ return x.id===id; }); if(!r) return; state.editingId=id; $('e_year').value=r.year||''; $('e_month').value=String(r.month||''); $('e_fruit').value=r.fruit||''; $('e_farm').value=r.farm||''; $('e_phone').value=r.phone||''; $('e_address').value=r.address||''; $('e_ordered').checked=!!r.ordered; $('e_note').value=r.note||''; $('editBackdrop').style.display='flex'; }
 
     async function saveEdit(){ var id=state.editingId; if(!id) return; var i=state.items.findIndex(function(x){ return x.id===id; }); if(i<0) return; var upd={
         id: state.items[i].id,
@@ -324,6 +338,7 @@
         fruit:String($('e_fruit').value||'').trim(),
         farm:String($('e_farm').value||'').trim(),
         phone:String($('e_phone').value||'').trim(),
+        address:String($('e_address').value||'').trim(),
         ordered: !!$('e_ordered').checked,
         note:String($('e_note').value||'').trim()
       };
