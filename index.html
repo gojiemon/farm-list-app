@@ -18,15 +18,23 @@
     .pill { background:#f3f4f6; border:1px solid var(--line); border-radius:999px; padding:2px 10px; }
     .warning { background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; }
     .tablewrap { max-height:60vh; overflow:auto; border:1px solid var(--line); border-radius:10px; }
-    table { width:100%; border-collapse:collapse; }
-    thead th { position:sticky; top:0; background:#f8fafc; text-align:left; padding:8px; border-bottom:1px solid var(--line); }
-    td { padding:8px; border-bottom:1px solid var(--line); vertical-align:top; }
+    /* Card-like table rows */
+    table { width:100%; border-collapse:separate; border-spacing:0 10px; }
+    thead th { position:sticky; top:0; background:#f8fafc; text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); }
+    tbody tr { background:var(--card); border:1px solid var(--accent, var(--line)); border-radius:10px; transition:border-color .15s ease, box-shadow .15s ease; box-shadow: inset 6px 0 0 var(--accent, transparent); }
+    tbody tr:hover { border-color:var(--accent, #cbd5e1); box-shadow: inset 6px 0 0 var(--accent, transparent), 0 2px 10px rgba(0,0,0,.06); }
+    td { padding:10px 12px; border-bottom:0; vertical-align:top; }
+    tbody td:first-child { border-top-left-radius:10px; border-bottom-left-radius:10px; }
+    tbody td:last-child  { border-top-right-radius:10px; border-bottom-right-radius:10px; }
+    @media (min-width:641px){ tbody td + td { border-left:1px solid var(--line); } }
     .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.8); color:#fff; padding:8px 12px; border-radius:8px; display:none; font-size:12px; }
     .backdrop { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:50; }
     .modal { width:min(680px, 92vw); background:#fff; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.25); padding:12px; }
     .modal header { font-weight:700; margin-bottom:8px; }
     .modal .footer { display:flex; gap:8px; justify-content:flex-end; }
     @media (max-width:640px){ thead{display:none} table,tbody,tr,td{display:block;width:100%} td{display:flex;gap:8px} td::before{content:attr(data-label);min-width:96px;color:var(--muted)} }
+    /* Newly added row flash */
+    tbody tr.row-new { border-color:#60a5fa !important; box-shadow:0 0 0 2px rgba(96,165,250,.25), 0 2px 10px rgba(0,0,0,.06); }
   </style>
 </head>
 <body>
@@ -180,16 +188,92 @@
     // ===== State & utils =====
     var state = { items: [], filters: { q:'', month:'' }, editingId: null };
     function $(id){ return document.getElementById(id); }
+    // ID generator (same policy as add())
+    function genId(){
+      var id=null; try{ id=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():null; }catch(e){ id=null; }
+      if(!id) id = Math.random().toString(36).slice(2)+Date.now().toString(36);
+      return id;
+    }
     function telHref(raw){ var c=String(raw||'').replace(/[^+\d]/g,''); return c?('tel:'+c):'' }
     function toast(m){ var t=$('toast'); t.textContent=m; t.style.display='block'; setTimeout(function(){ t.style.display='none'; },1800); }
     function setCount(n){ $('count').textContent = '件数: ' + n; }
+    // 初期登録用（保存が空のとき一度だけ投入）
+    var DEFAULT_ITEMS = [
+      { id: genId(), year:'', month:4, fruit:'いちご', farm:'秋山農園（山形・酒田）', phone:'', ordered:false, note:'安倍さんの紹介' },
+      { id: genId(), year:'', month:6, fruit:'あんず', farm:'やまさ農園', phone:'', ordered:false, note:'品種: ハーコット' },
+      { id: genId(), year:'', month:6, fruit:'桃',   farm:'杉山農園', phone:'', ordered:false, note:'アグリレーベン 斉藤さんの紹介' },
+      { id: genId(), year:'', month:7, fruit:'メロン', farm:'秋山農園（山形・酒田）', phone:'', ordered:false, note:'安倍さん紹介' },
+      { id: genId(), year:'', month:9, fruit:'ぶどう', farm:'小野農園（山梨の牧岡）', phone:'', ordered:false, note:'品種: 巨峰 / BKシードレス / マスカット系' },
+      { id: genId(), year:'', month:9, fruit:'ぶどう', farm:'平賀 葡萄園', phone:'', ordered:false, note:'' },
+      { id: genId(), year:'', month:9, fruit:'ぶどう', farm:'アグリレーベン 斉藤さん', phone:'', ordered:false, note:'品種: シャインマスカット / 巨峰 / カイキング。紹介: 五月女さん' },
+      { id: genId(), year:'', month:9, fruit:'梨',   farm:'五十嵐農園（山形・坂田）', phone:'', ordered:false, note:'品種: 豊水 / 南水。阿部さん紹介' },
+      { id: genId(), year:'', month:10, fruit:'さつまいも', farm:'サンサンファーム 阿部（山形・酒田）', phone:'', ordered:false, note:'' },
+      { id: genId(), year:'', month:11, fruit:'みかん', farm:'こたつファーム', phone:'', ordered:false, note:'品種: せとか / 津の輝' },
+      { id: genId(), year:'', month:12, fruit:'いちご', farm:'駒ヶ根いちご園', phone:'', ordered:false, note:'品種: 紅ほっぺ' }
+      // レインボーレッドキウイ（ぽぽ農園 高橋）は月が未確定のため保留。月をご指定ください。
+    ];
+    // 農園名から安定した色(HSL)を生成
+    // 追加の初期データ（ユーザー提供）
+    var DEFAULT_EXTRA = [
+      { id: genId(), year:'', month:10, fruit:'レインボーレッドキウイ', farm:'ぽぽ農園 高橋', phone:'', ordered:false, note:'' },
+      { id: genId(), year:'', month:5,  fruit:'ピーチパイン',           farm:'やまねこ農園',           phone:'0980-85-6366', ordered:false, note:'' },
+      { id: genId(), year:'', month:6,  fruit:'梅',                     farm:'中松梅園',               phone:'090-5881-3391', ordered:false, note:'' },
+      { id: genId(), year:'', month:6,  fruit:'サワーチェリー',         farm:'やまさ農園',             phone:'090-381-2609', ordered:false, note:'' },
+      { id: genId(), year:'', month:6,  fruit:'サクランボ',             farm:'今田農園',               phone:'090-4657-2418', ordered:false, note:'' },
+      { id: genId(), year:'', month:7,  fruit:'サクランボ',             farm:'今田農園',               phone:'090-4657-2418', ordered:false, note:'' },
+      { id: genId(), year:'', month:6,  fruit:'八ヶ岳ブルーベリー',     farm:'八ヶ岳ブルーベリー組合', phone:'',             ordered:false, note:'' },
+      { id: genId(), year:'', month:6,  fruit:'プラム',                 farm:'bonch',                  phone:'',             ordered:false, note:'' },
+      { id: genId(), year:'', month:6,  fruit:'桑の葉',                 farm:'株式会社 桑の里',         phone:'',             ordered:false, note:'' },
+      { id: genId(), year:'', month:6,  fruit:'メロン',                 farm:'菅生農園',               phone:'0479573521',   ordered:false, note:'品種: タカミメロン' },
+      { id: genId(), year:'', month:6,  fruit:'ハスカップ',             farm:'中西ファーム',           phone:'',             ordered:false, note:'' },
+      { id: genId(), year:'', month:7,  fruit:'ハスカップ',             farm:'中西ファーム',           phone:'',             ordered:false, note:'' },
+      { id: genId(), year:'', month:7,  fruit:'スイカ',                 farm:'大井農園',               phone:'',             ordered:false, note:'電話番号の確認が必要' }
+    ];
+    var DEFAULT_MORE = [
+      { id: genId(), year:'', month:7,  fruit:'沖縄マンゴー',   farm:'たかすじマンゴー園', phone:'098-968-5373', ordered:false, note:'予備: 090-4471-8225' },
+      { id: genId(), year:'', month:4,  fruit:'ネクタリン',     farm:'フルーツ工房タンザワ', phone:'090-4958-9737', ordered:false, note:'' },
+      { id: genId(), year:'', month:7,  fruit:'八ヶ岳ブルーベリー', farm:'ウッドベリーズ農園', phone:'', ordered:false, note:'' },
+      { id: genId(), year:'', month:7,  fruit:'いちじく',       farm:'宮内農園',           phone:'090-5376-6942', ordered:false, note:'' },
+      { id: genId(), year:'', month:8,  fruit:'生トウモロコシ', farm:'ハマラノーエン 柳沢', phone:'080-5145-0396', ordered:false, note:'' },
+      { id: genId(), year:'', month:9,  fruit:'ぶどう',         farm:'中村農園',           phone:'090-1502-6246', ordered:false, note:'品種: 巨峰 / ナガノパープル / シャインマスカット' },
+      { id: genId(), year:'', month:9,  fruit:'梨',             farm:'原 りんご園',       phone:'090-1868-3182', ordered:false, note:'品種: 南水' },
+      { id: genId(), year:'', month:9,  fruit:'ブラムリーアップル', farm:'やまさ農園',     phone:'', ordered:false, note:'' },
+      { id: genId(), year:'', month:9,  fruit:'すだち',         farm:'里山みらい',         phone:'', ordered:false, note:'' },
+      { id: genId(), year:'', month:9,  fruit:'いちじく',       farm:'やまね園',           phone:'090-2530-5999', ordered:false, note:'品種: バナーネ / ネビオレソリエス' },
+      { id: genId(), year:'', month:9,  fruit:'いちじく',       farm:'荘埜園',             phone:'', ordered:false, note:'品種: バナーネ' },
+      { id: genId(), year:'', month:9,  fruit:'プルーン',       farm:'長田農園',           phone:'090-2259-1388', ordered:false, note:'' },
+      { id: genId(), year:'', month:10, fruit:'ヘベス',         farm:'黒木農園',           phone:'', ordered:false, note:'' },
+      { id: genId(), year:'', month:10, fruit:'ライム',         farm:'ウォーチャードアグリ カルチャーファーマー', phone:'', ordered:false, note:'' },
+      { id: genId(), year:'', month:10, fruit:'洋梨',           farm:'関農園',             phone:'090-668-4776', ordered:false, note:'品種: バラード / ラ・フランス' }
+      // 月未定: プラム / 杉山農園（ご指定ください）
+    ];
+    function accentFromFarm(name){
+      var s=String(name||''); var h=0>>>0; for(var i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))>>>0; }
+      var hue=h%360; var sat=70; var light=55;
+      return 'hsl('+hue+', '+sat+'%, '+light+'%)';
+    }
 
     // ===== Validation =====
     function validate(p){ if(!p.fruit) return '果物名は必須です'; if(!p.farm) return '農園名は必須です'; if(!p.month) return '月を選択してください'; return '' }
+    // 初期シード後の補正（ユーザー指示）
+    function applySeedCorrections(list){
+      try{
+        // 7月のサクランボ（今田農園）は削除し、6月のみ残す
+        list = list.filter(function(x){
+          var isTarget = String(x.fruit||'').indexOf('サクランボ') !== -1 && String(x.farm||'').indexOf('今田') !== -1 && Number(x.month) === 7;
+          return !isTarget;
+        });
+        // 大井農園（スイカ）の電話番号を 090-2545-5206 に補正
+        list.forEach(function(x){
+          if(String(x.fruit||'')==='スイカ' && String(x.farm||'').indexOf('大井農園')!==-1){ x.phone = '090-2545-5206'; }
+        });
+      }catch(e){}
+      return list;
+    }
 
     // ===== Rendering =====
-    function rowHTML(v){ var tel=v.phone?('<a href="'+telHref(v.phone)+'">'+v.phone+'</a>'):''; return (
-      '<tr data-id="'+v.id+'">\n'
+    function rowHTML(v){ var tel=v.phone?('<a href="'+telHref(v.phone)+'">'+v.phone+'</a>'):''; var acc=accentFromFarm(v.farm); return (
+      '<tr data-id="'+v.id+'" style="--accent:'+acc+'">\n'
       +'  <td data-label="月">'+(v.month!=null?v.month:'')+'</td>\n'
       +'  <td data-label="果物名">'+(v.fruit!=null?v.fruit:'')+'</td>\n'
       +'  <td data-label="農園">'+(v.farm!=null?v.farm:'')+'</td>\n'
@@ -208,6 +292,7 @@
     }
 
     function render(){ var view=applyFilters(state.items); var tbody=$('tbody'); tbody.innerHTML=view.map(rowHTML).join(''); setCount(view.length); }
+    function highlightRow(id){ try{ var tr=document.querySelector('tbody tr[data-id="'+id+'"]'); if(tr){ tr.classList.add('row-new'); tr.scrollIntoView({block:'nearest', behavior:'smooth'}); setTimeout(function(){ tr.classList.remove('row-new'); },1400); } }catch(e){} }
 
     // ===== CRUD =====
     async function add(){
@@ -225,7 +310,7 @@
         note:String($('note').value||'').trim()
       };
       var m=validate(p); if(m){ alert(m); return; }
-      state.items.push(p); await store.save(state.items); render(); toast('登録しました');
+      state.items.push(p); await store.save(state.items); render(); highlightRow(id); toast('登録しました');
     }
 
     async function remove(id){ state.items = state.items.filter(function(x){ return x.id!==id; }); await store.save(state.items); render(); toast('削除しました'); }
@@ -287,8 +372,13 @@
       await store.init();
       await ensurePersistence();
 
-      // load & render
+      // load & seed if empty, then render
       state.items = await store.load();
+      if(!state.items || !state.items.length){
+        state.items = DEFAULT_ITEMS.concat(DEFAULT_EXTRA, DEFAULT_MORE);
+        state.items = applySeedCorrections(state.items);
+        await store.save(state.items);
+      }
       render();
       document.getElementById('status').textContent='準備OK';
 
