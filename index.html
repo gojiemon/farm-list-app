@@ -39,12 +39,73 @@
     .modal .footer { display:flex; gap:8px; justify-content:flex-end; }
     @media (max-width:640px){
       thead{display:none}
-      table,tbody,tr,td{display:block;width:100%}
-      /* compact rows for small screens */
-      tbody tr{ margin:4px 0 }
-      td{display:flex;gap:4px;padding:4px 6px;line-height:1.3;font-size:13px}
-      td::before{content:attr(data-label);min-width:68px;color:var(--muted);font-size:12px}
-      button{font-size:12px;padding:6px 8px}
+      table,tbody{display:block;width:100%}
+      tbody tr{
+        display:grid;
+        grid-template-columns:auto 1fr;
+        grid-template-areas:
+          "month fruit"
+          "farm farm"
+          "address address"
+          "phone phone"
+          "note note"
+          "ordered actions";
+        gap:6px 14px;
+        padding:12px;
+        margin:10px 0;
+        border-radius:14px;
+        border:1px solid rgba(139,92,246,.16);
+        box-shadow:0 10px 18px rgba(79,70,229,.08);
+      }
+      tbody tr td{
+        padding:0;
+        line-height:1.45;
+        font-size:13px;
+        width:auto;
+      }
+      td::before{
+        content:attr(data-label);
+        display:block;
+        margin-bottom:2px;
+        color:var(--muted);
+        font-size:11px;
+        letter-spacing:.2px;
+      }
+      td[data-label="月"]{grid-area:month;font-size:18px;font-weight:700;color:var(--accent-main-strong);display:flex;align-items:center;gap:6px;}
+      td[data-label="月"]::after{content:"月";font-size:13px;font-weight:500;color:var(--muted);}
+      td[data-label="月"]:empty::after{content:"";}
+      td[data-label="果物名"]{grid-area:fruit;font-weight:600;color:#312e81;align-self:center;}
+      td[data-label="農園"]{grid-area:farm;font-weight:600;}
+      td[data-label="住所"]{grid-area:address;color:var(--muted);}
+      td[data-label="電話"]{grid-area:phone;display:flex;align-items:center;gap:6px;}
+      td[data-label="電話"] a{color:var(--accent-main-strong);text-decoration:none;font-weight:600;}
+      td[data-label="電話"] a::after{content:" \260E";font-size:12px;color:var(--muted);}
+      td[data-label="発注"]{grid-area:ordered;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+      td[data-label="発注"] input{transform:scale(1.1);}
+      td[data-label="メモ"]{grid-area:note;background:#f5f3ff;border-radius:10px;padding:8px 10px;color:#3730a3;}
+      td[data-label="メモ"]:empty{display:none;}
+      td[data-label="住所"]:empty,
+      td[data-label="電話"]:empty{display:none;}
+      td[data-label="操作"]{grid-area:actions;display:flex;justify-content:flex-end;gap:4px;align-items:center;flex-wrap:wrap;}
+      td[data-label="操作"]::before{display:none;}
+      td[data-label="月"]::before,
+      td[data-label="果物名"]::before{display:none;}
+      button{font-size:12px;padding:6px 10px;flex:1 1 auto;min-width:96px;}
+      td[data-label="操作"] button{
+        flex:0 0 auto;
+        font-size:10.5px;
+        font-weight:600;
+        padding:2px 6px;
+        min-width:46px;
+        line-height:1.15;
+        border-radius:999px;
+        letter-spacing:.12px;
+        box-shadow:none;
+      }
+      td[data-label="操作"] button[data-action="edit"]{background:rgba(129,140,248,.2);color:#312e81;box-shadow:none;}
+      td[data-label="操作"] button[data-action="edit"]:hover{background:rgba(99,102,241,.35);}
+      td[data-label="操作"] button[data-action="delete"]{background:rgba(248,113,113,.18);color:#7f1d1d;box-shadow:none;}
+      td[data-label="操作"] button[data-action="delete"]:hover{background:rgba(239,68,68,.3);}
     }
     /* Newly added row flash */
     tbody tr.row-new { border-color:#60a5fa !important; box-shadow:0 0 0 2px rgba(96,165,250,.25), 0 2px 10px rgba(0,0,0,.06); }
