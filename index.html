@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <title>月別・農家リスト（安定版・永続保存・互換修正）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#6b21a8" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="mask-icon" href="favicon.svg" color="#6b21a8" />
+  <!-- iOS ブックマークのアイコン（PNG 画像を同階層に置けば使用されます） -->
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <style>
     :root { --bg:#fff; --fg:#111827; --muted:#6b7280; --line:#e5e7eb; --card:#fff; }
     *{ box-sizing:border-box }
@@ -63,10 +68,13 @@
       <select id="fMonth" style="width:150px"><option value="">すべての月</option></select>
       <button id="resetFilters">リセット</button>
     </div>
+    <div class="row" style="justify-content:flex-end">
+      <button id="showForm" type="button">新規登録</button>
+    </div>
   </div>
 
   <!-- Form -->
-  <div class="card" aria-label="登録フォーム">
+  <div id="formCard" class="card" aria-label="登録フォーム" style="display:none">
     <div class="row">
       <input id="year" type="number" placeholder="年 (例:2025)" style="width:120px" />
       <select id="month" style="width:120px"></select>
@@ -86,7 +94,7 @@
       <textarea id="note" placeholder="メモ"></textarea>
     </div>
     <div class="row">
-      <button id="add">登録</button>
+      <button id="add">登録完了</button>
       <button id="wipe">全削除</button>
       <span style="margin-left:auto"></span>
       <button id="exp">JSONエクスポート</button>
@@ -212,6 +220,14 @@
     function telHref(raw){ var c=String(raw||'').replace(/[^+\d]/g,''); return c?('tel:'+c):'' }
     function toast(m){ var t=$('toast'); t.textContent=m; t.style.display='block'; setTimeout(function(){ t.style.display='none'; },1800); }
     function setCount(n){ $('count').textContent = '件数: ' + n; }
+    // フォームの表示/非表示と初期化
+    function clearForm(){ try{
+      $('year').value=''; $('month').value=''; $('fruit').value='';
+      $('farm').value=''; $('phone').value=''; $('address').value='';
+      $('ordered').checked=false; $('note').value='';
+    }catch(e){} }
+    function showForm(){ var c=$('formCard'); if(c){ c.style.display='block'; try{ $('year').focus(); }catch(e){} } }
+    function hideForm(){ var c=$('formCard'); if(c){ c.style.display='none'; } }
     // 初期登録用（保存が空のとき一度だけ投入）
     var DEFAULT_ITEMS = [
       { id: genId(), year:'', month:4, fruit:'いちご', farm:'秋山農園（山形・酒田）', phone:'', ordered:false, note:'安倍さんの紹介' },
@@ -411,7 +427,10 @@
       document.getElementById('resetFilters').addEventListener('click', function(){ state.filters={q:'',month:''}; document.getElementById('q').value=''; document.getElementById('fMonth').value=''; render(); });
 
       // form
-      document.getElementById('add').addEventListener('click', add);
+      var addBtn=document.getElementById('add');
+      if(addBtn){ addBtn.addEventListener('click', async function(){ await add(); hideForm(); }); }
+      var showBtn=document.getElementById('showForm');
+      if(showBtn){ showBtn.addEventListener('click', function(){ clearForm(); showForm(); window.scrollTo({top:0, behavior:'smooth'}); }); }
       document.getElementById('wipe').addEventListener('click', wipeAll);
       document.getElementById('exp').addEventListener('click', exportJSON);
       document.getElementById('impBtn').addEventListener('click', function(){ document.getElementById('imp').click(); });
