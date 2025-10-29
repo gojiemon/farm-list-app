@@ -86,12 +86,26 @@
       td[data-label="メモ"]:empty{display:none;}
       td[data-label="住所"]:empty,
       td[data-label="電話"]:empty{display:none;}
-      td[data-label="操作"]{grid-area:actions;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
+      td[data-label="操作"]{grid-area:actions;display:flex;justify-content:flex-end;gap:2px;align-items:center;flex-wrap:wrap;}
       td[data-label="操作"]::before{display:none;}
       td[data-label="月"]::before,
       td[data-label="果物名"]::before{display:none;}
       button{font-size:12px;padding:6px 10px;flex:1 1 auto;min-width:96px;}
-      td[data-label="操作"] button{flex:1 0 46%;}
+      td[data-label="操作"] button{
+        flex:0 0 auto;
+        font-size:10px;
+        font-weight:600;
+        padding:2px 5px;
+        min-width:42px;
+        line-height:1.1;
+        border-radius:999px;
+        letter-spacing:.08px;
+        box-shadow:none;
+      }
+      td[data-label="操作"] button[data-action="edit"]{background:rgba(129,140,248,.2);color:#312e81;box-shadow:none;}
+      td[data-label="操作"] button[data-action="edit"]:hover{background:rgba(99,102,241,.35);}
+      td[data-label="操作"] button[data-action="delete"]{background:rgba(248,113,113,.18);color:#7f1d1d;box-shadow:none;}
+      td[data-label="操作"] button[data-action="delete"]:hover{background:rgba(239,68,68,.3);}
     }
     /* Newly added row flash */
     tbody tr.row-new { border-color:#60a5fa !important; box-shadow:0 0 0 2px rgba(96,165,250,.25), 0 2px 10px rgba(0,0,0,.06); }
